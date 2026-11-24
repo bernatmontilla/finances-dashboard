@@ -9,7 +9,7 @@
 #                      admins may still merge a pull request over a red check (never push directly).
 #
 # What it cannot do, it prints at the end: the two secrets, the Claude GitHub app, the cloud
-# environment and the two scheduled tasks.
+# environment and the three scheduled tasks.
 #
 # Usage: bash scripts/dev/setup-repo.sh [--dry-run]
 #        (needs gh, signed in as an admin of the repository; --dry-run changes nothing)
@@ -104,5 +104,5 @@ Left to do by hand (SETUP-FROM-TEMPLATE.md has the details):
        gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo $repo
   c. The Claude GitHub app has access to $repo: github.com/apps/claude
   d. The cloud environment: docs/cloud-environment.md
-  e. The two scheduled tasks, then the four checks: docs/automation.md
+  e. The three scheduled tasks, then the four checks: docs/automation.md
 TEXT

@@ -17,21 +17,24 @@ cannot reach: hardware on the desk (flashing a board, a serial log), the home ne
 when the cloud's hourly limits are used up. A cloud session never touches an issue with `local`.
 An issue with **no** label waits: that is how a plan queues its issues.
 
-## Set up once per repository (two scheduled tasks)
+## Set up once per repository (three scheduled tasks)
 
 At [claude.ai/code/routines](https://claude.ai/code/routines) (or `/schedule` in a terminal),
-repository: this one, environment: this repository's ([cloud-environment.md](cloud-environment.md)).
-The Claude GitHub app must be installed on the repository.
+repository: this one, environment: this repository's ([cloud-environment.md](cloud-environment.md)),
+model: Sonnet (not the default Opus). The Claude GitHub app must be installed on the repository.
+A task takes only **one** GitHub trigger, and the filters of a trigger must all match, so each
+event below is a task of its own. *Is one of* takes comma-separated values.
 
-**Task "issues"**, model Sonnet. Trigger: GitHub event → Issue → *labeled*. Prompt:
+**Task "issues"**. Trigger: GitHub event → *Issue: Labeled*, filter *Labels* is one of `idea,spec`.
+Prompt:
 
 > Read `docs/automation.md` in this repository and do exactly what *When an issue is labeled* says
 > for the issue of the event that started this run. If you cannot tell which issue that is, stop.
 
-**Task "pull requests"**, model Sonnet. Three triggers, prompt below:
-- Pull request → *closed*, filter *Is merged* = true
-- Pull request → *labeled*, filter *Labels* contains `changes-requested`
-- Pull request → *labeled*, filter *Labels* contains `needs-rebase`
+**Task "pull requests (merged)"**. Trigger: GitHub event → *Pull request: Closed*, filter
+*Is merged* equals true. **Task "pull requests (labels)"**. Trigger: GitHub event →
+*Pull request: Labeled*, filter *Labels* is one of `changes-requested,needs-rebase`. Both have the
+same prompt:
 
 > Read `docs/automation.md` in this repository and do exactly what *When a pull request event
 > arrives* says for the pull request of the event that started this run. If you cannot tell which
@@ -86,5 +89,5 @@ None of this ran before it was written down. Check, in this order, with a throwa
    filing one with the *Idea* template (the label is on it from the start) do the same?
 2. Does a label that a cloud session or a workflow adds start a session too? (`needs-rebase` and
    `changes-requested` are set by workflows; dispatch sets `idea` from a session.)
-3. Does the task UI offer a label filter for issue events? If so, filter on `idea` and `spec`.
+3. Does a label filter with two values (`idea,spec`) start a run for each of them?
 4. Does a merged PR start the dispatch, and does auto-merge leave a risky PR alone?

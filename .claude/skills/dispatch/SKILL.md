@@ -1,6 +1,6 @@
 ---
 name: dispatch
-description: After a pull request merges, start the next issues of the open plan - reads the plan issue's order of work, ticks finished rows and labels the rows whose turn it is. Use from the "pull requests" scheduled task, or when the owner says "dispatch".
+description: After a pull request merges, start the next issues of the open plan - reads the plan issue's order of work, ticks finished rows and labels the rows whose turn it is. Use from the "pull requests (merged)" scheduled task, or when the owner says "dispatch".
 ---
 
 # Dispatch the next rows of the plan

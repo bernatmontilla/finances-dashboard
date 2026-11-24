@@ -24,7 +24,7 @@ your machine, so everything a worker needs is either committed here or an accoun
 ## Start a worker
 
 Workers start themselves when an issue is labeled `idea` or `spec` ([automation.md](automation.md)
-has the two scheduled tasks to create). By hand it still works:
+has the three scheduled tasks to create). By hand it still works:
 
 > Work on issue #N as the worker in `.claude/agents/worker.md`.
 

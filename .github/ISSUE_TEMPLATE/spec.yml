@@ -1,0 +1,48 @@
+name: Spec (for a worker)
+description: A full spec a worker can build without asking (skill write-spec). Filing it starts the build. For a rough request use Idea instead.
+labels: ["spec"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What changes for the user, and why. Fictional data only (AGENTS.md).
+    validations:
+      required: true
+  - type: textarea
+    id: files
+    attributes:
+      label: Files to touch
+      description: The files, classes and tests to change or add. Also the files NOT to touch, if that matters.
+    validations:
+      required: true
+  - type: textarea
+    id: decisions
+    attributes:
+      label: Decisions already made
+      description: Design choices the worker must follow, not redo. Name the helpers to reuse.
+  - type: input
+    id: reserved
+    attributes:
+      label: Numbers reserved
+      description: Anything two parallel issues could both claim (a migration number, a port, an API version), or "none".
+      placeholder: none
+  - type: dropdown
+    id: release
+    attributes:
+      label: Release level
+      options: ["release:patch (fix)", "release:minor (feature)", "release:none (docs or process)", "release:major (breaking)"]
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: One line per requirement, each one something a test can check (name the edges). Then what the owner checks after deploy.
+    validations:
+      required: true
+  - type: textarea
+    id: parallel
+    attributes:
+      label: Runs alongside
+      description: Other open issues it may run in parallel with (no shared files), or the issue it must wait for.

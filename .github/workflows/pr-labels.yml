@@ -3,7 +3,7 @@
 #   labels     sets risk:* from the paths a PR changes (.github/labeler.yml), as soon as it opens.
 #   conflicts  after every push to main, marks open PRs that no longer merge cleanly with
 #              needs-rebase (and clears it once they do). It never pushes: the label starts a
-#              session that rebases (the "pull requests" scheduled task).
+#              session that rebases (the "pull requests (labels)" scheduled task).
 #
 # pull_request_target so Dependabot PRs can be labelled; it reads main's labeler.yml and never
 # checks out the PR's code.

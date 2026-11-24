@@ -9,7 +9,7 @@ Extracted from the workflow of `bookkeeping-software-montilla` as of 1.0 (commit
 |---|---|---|
 | Method skills: `test-first`, `root-cause-debugging`, `write-spec`, `plan-product` | your **claude.ai account** | chat, Projects, local Claude Code (synced), cloud sessions |
 | Rules (`AGENTS.md`), agents and skills in `.claude/`, docs loop, GitHub templates and workflows | **this repository**, copied per project | local and cloud Claude Code, Gemini/Codex (they read `AGENTS.md`), GitHub |
-| Two scheduled tasks per repository | **claude.ai/code/routines** ([docs/automation.md](docs/automation.md)) | start cloud sessions from labels and merges |
+| Three scheduled tasks per repository | **claude.ai/code/routines** ([docs/automation.md](docs/automation.md)) | start cloud sessions from labels and merges |
 | Other people's skills a worker needs (design skills for a website, say) | copied into the project's `.claude/skills/` and committed (`npx skills add <repo> --skill <name>`) | that project, local and cloud |
 | Plugins, rtk, anything in `~/.claude/` | your machine only | interactive local sessions; cloud sessions never see them |
 
@@ -30,7 +30,7 @@ when they want it); keep **project facts** in that project's `AGENTS.md` and `do
    - `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`, for Claude's review in CI of risky PRs.
      The Claude GitHub app must have access to the repository (github.com/apps/claude).
 4. **Cloud environment** for workers: [docs/cloud-environment.md](docs/cloud-environment.md).
-5. **The two scheduled tasks**: [docs/automation.md](docs/automation.md), then its *First things
+5. **The three scheduled tasks**: [docs/automation.md](docs/automation.md), then its *First things
    to test* with a throwaway issue.
 6. **Planning round**: in a Claude Code session on the repository, *"Run a planning round with the
    skill plan-product."* It fills the TODOs (`grep -rn TODO .`: `AGENTS.md`,

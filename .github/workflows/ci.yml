@@ -1,0 +1,38 @@
+# Continuous integration. One build command for humans, agents and CI: scripts/dev/build.sh.
+#
+#   A ready pull request, and every push to main, builds. A DRAFT pull request does not (the job is
+#   skipped, which a required check counts as passed; a draft cannot be merged): the worker's local
+#   build is the gate until it is marked ready, so drafts cost no Actions minutes.
+#   Runner: set the repository variable RUNS_ON=self-hosted to use your own runner; delete it to go
+#   back to GitHub's. No code change needed.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+# Pushes to main wait for each other; a newer push to the same PR cancels the older run. A draft's
+# (skipped) run gets a group of its own so it can never cancel a real build of the same PR.
+concurrency:
+  group: >-
+    ${{ github.event_name == 'push' && 'main' ||
+    (github.event.pull_request.draft && format('pr-{0}-draft-{1}', github.event.pull_request.number, github.run_id)
+    || format('pr-{0}', github.event.pull_request.number)) }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
+
+jobs:
+  build:
+    if: github.event_name == 'push' || !github.event.pull_request.draft
+    runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v7
+      # TODO: set up the toolchain if the runner lacks it, for example
+      # - uses: actions/setup-java@v5
+      #   with: { distribution: temurin, java-version: '25' }
+      - name: Build and test
+        run: bash scripts/dev/build.sh

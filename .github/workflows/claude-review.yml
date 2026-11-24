@@ -1,0 +1,139 @@
+# Claude reviews pull requests that touch risky files (a risk:* label, .github/labeler.yml), once
+# they are ready (docs/workflow.md, step 3). Every other PR is reviewed by the worker's own
+# reviewer subagent only.
+#
+#   full review   when such a PR is opened as ready or a draft is marked ready, and when the label
+#                 re-check is added to any PR Claude has not reviewed yet.
+#   re-check      when re-check is added after a review: only checks that the blocking findings are
+#                 fixed or answered, plus anything the fixes broke. No new nitpicks.
+#
+# Claude only reads and writes two files (the review and a one-word verdict). The step after it
+# posts the review and sets the labels, so the model never holds a write token.
+#
+# Needs the Claude GitHub app on the repository and the secret CLAUDE_CODE_OAUTH_TOKEN
+# (`claude setup-token`, uses your subscription) — see SETUP-FROM-TEMPLATE.md.
+name: Claude review
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, labeled]
+
+permissions:
+  contents: read
+
+# A newer review of the same PR replaces a running one. Other labels also start this workflow (the
+# job skips them): those get a group of their own so they never cancel a real review.
+concurrency:
+  group: >-
+    claude-review-${{ github.event.pull_request.number }}-${{
+    (github.event.action != 'labeled' || github.event.label.name == 're-check') && 'review' || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: >-
+      github.event.pull_request.user.login != 'dependabot[bot]' && (
+        (github.event.action != 'labeled' && !github.event.pull_request.draft) ||
+        (github.event.action == 'labeled' && github.event.label.name == 're-check')
+      )
+    runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ github.event.pull_request.number }}
+      ACTION: ${{ github.event.action }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Decide whether this PR needs a review
+        id: skip
+        run: |
+          set -euo pipefail
+          labels="$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/labels" --jq '.[].name')"
+          if [[ "$ACTION" != "labeled" ]] && ! grep -q '^risk:' <<<"$labels"; then
+            echo "No risk:* label: the worker's own review and the build are the check."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Gather what the reviewer reads
+        if: steps.skip.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/pr"
+          gh pr diff "$PR" > "$RUNNER_TEMP/pr/diff.patch"
+          gh pr view "$PR" --json number,title,body,labels,baseRefName,headRefName > "$RUNNER_TEMP/pr/pr.json"
+          gh pr view "$PR" --json reviews,comments \
+            --jq '[.reviews[], .comments[]] | sort_by(.submittedAt // .createdAt) | .[] |
+                  "--- " + .author.login + " (" + (.submittedAt // .createdAt) + ")\n" + .body' \
+            > "$RUNNER_TEMP/pr/conversation.txt"
+          MODE=full
+          if [[ "$ACTION" == "labeled" ]] && grep -q '^\*\*Claude review (' "$RUNNER_TEMP/pr/conversation.txt"; then
+            MODE=recheck
+          fi
+          echo "MODE=$MODE" >> "$GITHUB_ENV"
+
+      - name: Claude reviews
+        if: steps.skip.outputs.skip != 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: >-
+            --model claude-sonnet-5-5
+            --max-turns 40
+            --allowedTools Read,Grep,Glob,Write,Task,Agent
+          prompt: |
+            You review pull request #${{ github.event.pull_request.number }} of this repository.
+            Mode: ${{ env.MODE }}.
+
+            Read the files in ${{ runner.temp }}/pr: diff.patch (the change), pr.json (title,
+            description, labels), conversation.txt (earlier reviews and answers). The repository is
+            checked out at the PR's head, so read surrounding code where you need context.
+            Rules: AGENTS.md. Checklist and order: docs/review-checklist.md.
+            Follow the role description in .claude/agents/reviewer.md.
+
+            Mode full: review the whole change. Hand the changed files that match a risk:* path in
+            .github/labeler.yml to the risk-checker subagent, in the foreground, and wait for its
+            answer before you write anything (this run is not interactive: if you stop while a
+            subagent runs, nothing is written). Include its findings.
+            Mode recheck: only check that every blocking finding of the earlier Claude review is
+            fixed or answered with a convincing reason, and that the fixes broke nothing.
+
+            Write two files and nothing else:
+            1. ${{ runner.temp }}/pr/review.md: first line "Ready to merge" or what blocks it, then
+               the findings, blocking first, each with file:line, problem, fix. Say "(not sure)"
+               instead of guessing. Nothing about style. Keep it short.
+            2. ${{ runner.temp }}/pr/verdict.txt: one word.
+               PASS  = nothing blocks merging.
+               BLOCK = something must change first.
+               OWNER = mode recheck only: the builder disagreed with a blocking finding with a
+                       reason that is not clearly wrong; the owner decides.
+            Never put real data in the review (AGENTS.md hard rule 1).
+
+      - name: Post the review and set the labels
+        if: always() && steps.skip.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/pr"
+          verdict="$(tr -d '[:space:]' < "$dir/verdict.txt" 2>/dev/null || true)"
+          gh pr edit "$PR" --remove-label re-check >/dev/null 2>&1 || true
+          if [[ ! -s "$dir/review.md" || ! "$verdict" =~ ^(PASS|BLOCK|OWNER)$ ]]; then
+            echo "::error::The review did not finish: re-run it or add the label re-check"
+            exit 1
+          fi
+          { echo "**Claude review (${MODE:-full}): $verdict**"; echo; cat "$dir/review.md"; } > "$dir/post.md"
+          gh pr review "$PR" --comment --body-file "$dir/post.md"
+          for old in ready-to-merge changes-requested needs-owner; do
+            gh pr edit "$PR" --remove-label "$old" >/dev/null 2>&1 || true
+          done
+          case "$verdict" in
+            PASS)  gh pr edit "$PR" --add-label ready-to-merge ;;
+            BLOCK) gh pr edit "$PR" --add-label changes-requested ;;
+            OWNER) gh pr edit "$PR" --add-label needs-owner ;;
+          esac

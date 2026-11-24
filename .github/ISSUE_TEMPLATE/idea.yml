@@ -1,0 +1,11 @@
+name: Idea (an agent writes the spec and builds it)
+description: Say what you want in your own words. Filing it starts the work - an agent writes the full spec into this issue, asks here if something only you can decide is missing, then builds it.
+labels: ["idea"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What and why
+      description: As much detail as you have - what should change, for whom, what you would look at to call it done, what must not change. Fictional data only (AGENTS.md).
+    validations:
+      required: true

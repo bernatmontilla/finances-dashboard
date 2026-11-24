@@ -1,0 +1,62 @@
+# Pull request housekeeping that needs no AI and no build (docs/automation.md):
+#
+#   labels     sets risk:* from the paths a PR changes (.github/labeler.yml), as soon as it opens.
+#   conflicts  after every push to main, marks open PRs that no longer merge cleanly with
+#              needs-rebase (and clears it once they do). It never pushes: the label starts a
+#              session that rebases (the "pull requests" scheduled task).
+#
+# pull_request_target so Dependabot PRs can be labelled; it reads main's labeler.yml and never
+# checks out the PR's code.
+name: PR labels
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  labels:
+    if: github.event_name == 'pull_request_target'
+    runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/labeler@v6
+        with:
+          sync-labels: true
+
+  conflicts:
+    if: github.event_name == 'push' || github.event.action == 'synchronize'
+    runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Mark open PRs that no longer merge cleanly
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ONLY: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          prs="${ONLY:-$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --json number --jq '.[].number')}"
+          for pr in $prs; do
+            state=""
+            # GitHub works out "mergeable" lazily: ask until it has an answer (max ~1 min)
+            for _ in $(seq 1 12); do
+              state="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr" --jq '.mergeable')"
+              [[ "$state" != "null" ]] && break
+              sleep 5
+            done
+            has="$(gh api "repos/$GITHUB_REPOSITORY/issues/$pr/labels" --jq 'map(.name) | index("needs-rebase") != null')"
+            if [[ "$state" == "false" && "$has" == "false" ]]; then
+              gh pr edit "$pr" --repo "$GITHUB_REPOSITORY" --add-label needs-rebase
+            elif [[ "$state" == "true" && "$has" == "true" ]]; then
+              gh pr edit "$pr" --repo "$GITHUB_REPOSITORY" --remove-label needs-rebase
+            fi
+            echo "#$pr mergeable=$state"
+          done

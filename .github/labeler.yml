@@ -1,0 +1,17 @@
+# Labels set automatically on every pull request by the paths it changes (pr-labels.yml,
+# actions/labeler). risk:high means: Claude reviews the PR in CI, and its reviewer hands these files
+# to the Opus risk-checker subagent. A PR without it is reviewed by the worker's own reviewer only,
+# so a path that can break what must never break belongs here. When in doubt, add it.
+# The review itself is risky too: changes to how review works always get reviewed.
+
+risk:high:
+  - changed-files:
+      - any-glob-to-any-file:
+          # TODO: the paths of this project's risky code and its tests, for example
+          # - src/**/billing/**
+          # - src/**/auth/**
+          # - db/migrations/**
+          - .github/**
+          - .claude/**
+          - AGENTS.md
+          - scripts/dev/**

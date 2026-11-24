@@ -1,0 +1,79 @@
+# Merges a pull request by itself once CI is green, unless it touches risky paths (docs/automation.md).
+#
+#   Runs after the workflow "CI" finishes with success for a pull request. It runs from main (a
+#   workflow_run workflow always does), so a PR cannot change the rules it is merged by.
+#   1. Sets the risk:* labels again from main's .github/labeler.yml, so the decision never depends
+#      on whether the "PR labels" workflow was quick enough.
+#   2. Leaves the PR alone when it is a draft, got a newer push, comes from Dependabot, or has a
+#      risk:* label, hold, changes-requested or needs-owner. Those wait for the review and the owner.
+#   3. Otherwise squash-merges it (or turns on auto-merge when another required check is pending).
+#
+# Token: with the secret AUTOMERGE_TOKEN (a fine-grained token for this repository with Contents and
+# Pull requests read/write) the merge is a normal push to main, so CI and a deploy on main run.
+# Without it the job uses the workflow's own token: the merge works, but GitHub starts no workflow
+# for a push made with that token, so nothing runs on main afterwards.
+#
+# Needs Settings → General → Pull Requests → "Allow auto-merge" and "Allow squash merging".
+name: Auto-merge
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  merge:
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ secrets.AUTOMERGE_TOKEN || github.token }}
+      SHA: ${{ github.event.workflow_run.head_sha }}
+      BRANCH: ${{ github.event.workflow_run.head_branch }}
+    steps:
+      - name: Find the pull request
+        id: pr
+        run: |
+          set -euo pipefail
+          pr="$(gh api "repos/$GITHUB_REPOSITORY/pulls?state=open&head=$GITHUB_REPOSITORY_OWNER:$BRANCH" |
+                jq -r --arg sha "$SHA" '.[0] | select(. != null) | select(.head.sha == $sha and .draft == false) | .number')"
+          if [[ -z "$pr" ]]; then
+            echo "No open, ready pull request at $SHA on $BRANCH: nothing to do."
+          fi
+          echo "number=$pr" >> "$GITHUB_OUTPUT"
+
+      - name: Set the risk labels from main's labeler.yml
+        if: steps.pr.outputs.number != ''
+        uses: actions/labeler@v6
+        with:
+          pr-number: ${{ steps.pr.outputs.number }}
+          sync-labels: true
+
+      - name: Merge when nothing holds it
+        if: steps.pr.outputs.number != ''
+        env:
+          PR: ${{ steps.pr.outputs.number }}
+        run: |
+          set -euo pipefail
+          info="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR")"
+          author="$(jq -r '.user.login' <<<"$info")"
+          labels="$(jq -r '.labels[].name' <<<"$info")"
+          hold="$(grep -E '^(risk:.*|hold|changes-requested|needs-owner)$' <<<"$labels" | paste -sd' ' - || true)"
+          if [[ "$author" == "dependabot[bot]" ]]; then
+            echo "Dependabot: the owner merges library updates."; exit 0
+          fi
+          if [[ -n "$hold" ]]; then
+            echo "Not merging #$PR by itself: $hold"; exit 0
+          fi
+          if [[ "$(jq -r '.head.sha' <<<"$info")" != "$SHA" ]]; then
+            echo "A newer push arrived: its own CI run decides."; exit 0
+          fi
+          gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --squash --match-head-commit "$SHA" ||
+            gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --squash --auto --match-head-commit "$SHA"

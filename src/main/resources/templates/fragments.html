@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title th:text="#{app.name}"></title>
+</head>
+<body>
+  <nav th:fragment="nav" class="nav">
+    <a th:href="@{/}" th:text="#{nav.overview}"></a>
+    <a th:href="@{/accounts}" th:text="#{nav.accounts}"></a>
+  </nav>
+
+  <p th:fragment="error" th:if="${error != null}" class="error" role="alert" th:text="#{${error}}"></p>
+
+  <span th:fragment="balance(view, debt)" class="balance">
+    <span th:if="${view == null}" class="muted" th:text="#{balance.none}"></span>
+    <span th:if="${view != null}">
+      <strong th:if="${!debt}" class="amount" th:text="${view.amount}"></strong>
+      <strong th:if="${debt}" class="amount owed" th:text="#{balance.owed(${view.amount})}"></strong>
+      <span class="muted" th:text="#{balance.asOf(${view.date})}"></span>
+      <span class="muted" th:text="#{${view.ageKey}(${view.ageDays})}"></span>
+    </span>
+  </span>
+</body>
+</html>

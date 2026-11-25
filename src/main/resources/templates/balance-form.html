@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title th:text="#{balances.edit.title}"></title>
+  <link rel="stylesheet" th:href="@{/app.css}">
+</head>
+<body>
+  <main>
+    <nav th:replace="~{fragments :: nav}"></nav>
+    <h1 th:text="#{balances.edit.title}"></h1>
+    <p th:text="${account.name}"></p>
+    <p th:replace="~{fragments :: error}"></p>
+    <form method="post" th:action="@{/accounts/{id}/balances/{entry}(id=${account.id}, entry=${entry.id})}">
+      <p th:if="${debt}" class="muted" th:text="#{account.debtHint}"></p>
+      <p>
+        <label for="amount" th:text="#{balances.field.amount}"></label>
+        <input id="amount" name="amount" type="text" inputmode="decimal" autocomplete="off" required th:value="${amount}">
+      </p>
+      <p>
+        <label for="date" th:text="#{balances.field.date}"></label>
+        <input id="date" name="date" type="date" required th:value="${date}" th:max="${today}">
+      </p>
+      <p class="actions">
+        <button type="submit" th:text="#{account.save}"></button>
+        <a th:href="@{/accounts/{id}(id=${account.id})}" th:text="#{account.cancel}"></a>
+      </p>
+    </form>
+    <form method="post" th:action="@{/accounts/{id}/balances/{entry}/remove(id=${account.id}, entry=${entry.id})}">
+      <p><button type="submit" class="danger" th:text="#{balances.remove}"></button></p>
+    </form>
+  </main>
+</body>
+</html>

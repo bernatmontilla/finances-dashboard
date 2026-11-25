@@ -20,6 +20,7 @@
           <a th:href="@{/accounts/{id}(id=${row.id})}" th:text="${row.name}"></a>
           <span class="muted" th:text="#{${row.kindKey}}"></span>
           <span th:replace="~{fragments :: balance(${row.balance}, ${row.debt})}"></span>
+          <span th:replace="~{fragments :: delivered(${row.delivery})}"></span>
         </li>
       </ul>
     </section>
@@ -32,6 +33,7 @@
             <span class="muted" th:text="#{${group.labelKey}}"></span>
             <span class="muted" th:text="#{${row.kindKey}}"></span>
             <span th:replace="~{fragments :: balance(${row.balance}, ${row.debt})}"></span>
+            <span th:replace="~{fragments :: delivered(${row.delivery})}"></span>
             <form method="post" th:action="@{/accounts/{id}/restore(id=${row.id})}" class="inline">
               <button type="submit" class="link" th:text="#{accounts.restore}"></button>
             </form>

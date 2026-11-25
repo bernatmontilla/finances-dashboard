@@ -7,13 +7,16 @@ import finances.accounts.BalanceEntry;
 import finances.accounts.Kind;
 import finances.accounts.Scope;
 import finances.accounts.Source;
+import finances.accounts.TransactionService;
 import finances.money.AmountFormatException;
 import finances.money.Money;
 import jakarta.servlet.http.HttpServletResponse;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -35,9 +38,11 @@ class AccountsController {
     private static final List<String> KIND_CODES = List.of("current", "savings", "investment", "debt");
 
     private final AccountService accounts;
+    private final TransactionService transactions;
 
-    AccountsController(AccountService accounts) {
+    AccountsController(AccountService accounts, TransactionService transactions) {
         this.accounts = accounts;
+        this.transactions = transactions;
     }
 
     // ----- the list
@@ -45,8 +50,9 @@ class AccountsController {
     @GetMapping("/accounts")
     String list(Model model) {
         LocalDate today = accounts.today();
-        model.addAttribute("groups", AccountViews.groups(accounts.list(false), today));
-        model.addAttribute("archivedGroups", AccountViews.groups(accounts.list(true), today));
+        Map<Long, Instant> delivered = transactions.lastDelivered();
+        model.addAttribute("groups", AccountViews.groups(accounts.list(false), today, delivered, transactions.zone()));
+        model.addAttribute("archivedGroups", AccountViews.groups(accounts.list(true), today, delivered, transactions.zone()));
         return "accounts";
     }
 
@@ -105,8 +111,8 @@ class AccountsController {
     // ----- the page of one account, with its balance history
 
     @GetMapping("/accounts/{id}")
-    String detail(@PathVariable long id, Model model) {
-        return detailPage(model, found(id), "", "");
+    String detail(@PathVariable long id, @RequestParam(defaultValue = "0") String page, Model model) {
+        return detailPage(model, found(id), "", "", TransactionViews.pageNumber(page));
     }
 
     @PostMapping("/accounts/{id}/balances")
@@ -166,7 +172,16 @@ class AccountsController {
     }
 
     private String detailPage(Model model, Account account, String amount, String date) {
+        return detailPage(model, account, amount, date, 0);
+    }
+
+    private String detailPage(Model model, Account account, String amount, String date, int page) {
         LocalDate today = accounts.today();
+        model.addAttribute("transactions", TransactionViews.page(transactions.forAccount(account.id(), page)));
+        model.addAttribute("transactionsPath", "/accounts/" + account.id());
+        model.addAttribute("delivery", transactions.lastDelivered(account.id())
+                .map(at -> AccountViews.delivery(at, transactions.zone(), today))
+                .orElse(null));
         model.addAttribute("account", account);
         model.addAttribute("scopeKey", AccountViews.scopeKey(account.scope()));
         model.addAttribute("kindKey", AccountViews.kindKey(account.kind()));

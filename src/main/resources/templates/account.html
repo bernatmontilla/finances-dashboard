@@ -54,6 +54,10 @@
         <a th:if="${manual and !account.archived}" th:href="@{/accounts/{id}/balances/{entry}/edit(id=${account.id}, entry=${entry.id})}" th:text="#{balances.edit}"></a>
       </li>
     </ul>
+
+    <h2 th:text="#{transactions.title}"></h2>
+    <p><span th:replace="~{fragments :: delivered(${delivery})}"></span></p>
+    <th:block th:replace="~{fragments :: transactions(${transactions}, false, ${transactionsPath})}"></th:block>
   </main>
 </body>
 </html>

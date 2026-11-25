@@ -8,6 +8,7 @@
   <nav th:fragment="nav" class="nav">
     <a th:href="@{/}" th:text="#{nav.overview}"></a>
     <a th:href="@{/accounts}" th:text="#{nav.accounts}"></a>
+    <a th:href="@{/transactions}" th:text="#{nav.transactions}"></a>
   </nav>
 
   <p th:fragment="error" th:if="${error != null}" class="error" role="alert" th:text="#{${error}}"></p>
@@ -21,5 +22,37 @@
       <span class="muted" th:text="#{${view.ageKey}(${view.ageDays})}"></span>
     </span>
   </span>
+
+  <span th:fragment="delivered(view)" class="muted">
+    <span th:if="${view == null}" th:text="#{transactions.neverDelivered}"></span>
+    <th:block th:if="${view != null}">
+      <span th:text="#{transactions.delivered(${view.date})}"></span>
+      <span th:text="#{${view.ageKey}(${view.ageDays})}"></span>
+    </th:block>
+  </span>
+
+  <th:block th:fragment="transactions(view, showAccount, path)">
+    <p th:if="${view.empty}" th:text="#{transactions.none}"></p>
+    <ul th:unless="${view.empty}" class="list transactions">
+      <li th:each="row : ${view.rows}">
+        <span class="meta muted">
+          <span th:text="${row.date}"></span>
+          <a th:if="${showAccount}" th:href="@{/accounts/{id}(id=${row.accountId})}" th:text="${row.accountName}"></a>
+          <span th:if="${row.pending}" class="pending" th:text="#{transactions.pending}"></span>
+        </span>
+        <span class="who">
+          <strong th:if="${row.hasCounterparty()}" th:text="${row.counterparty}"></strong>
+          <strong th:unless="${row.hasCounterparty()}" class="muted" th:text="#{transactions.noCounterparty}"></strong>
+          <span th:if="${row.hasDescription()}" class="muted" th:text="${row.description}"></span>
+          <span th:if="${row.hasNote()}" class="note" th:text="${row.note}"></span>
+        </span>
+        <span class="amount" th:text="${row.amount}"></span>
+      </li>
+    </ul>
+    <p th:if="${view.hasPrevious or view.hasNext}" class="pager">
+      <a th:if="${view.hasPrevious}" th:href="@{${path}(page=${view.previous})}" th:text="#{transactions.newer}"></a>
+      <a th:if="${view.hasNext}" th:href="@{${path}(page=${view.next})}" th:text="#{transactions.older}"></a>
+    </p>
+  </th:block>
 </body>
 </html>

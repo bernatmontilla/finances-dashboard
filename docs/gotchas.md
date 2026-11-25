@@ -5,9 +5,17 @@ what you are changing. Add a line when you hit a new one (in the same PR). When 
 bites twice, turn it into a guard test that scans the code or the docs and names file and line, and
 mention the test here.
 
-## TODO: area of this project
+## Money and bank data
 
-- TODO
+- A bank's "balance" comes in several types (booked, available, expected); store which one, and
+  show the booked one unless a spec says otherwise.
+- The same transaction can arrive first as pending and later as booked with another reference.
+- SQLite allows one writer: keep write transactions short, and never hold one across an HTTP call.
+
+## The target machine
+
+- 2 GB RAM shared with other JVMs: the heap cap is real. Stream large result sets.
+- arm64: a dependency with native code (sqlite-jdbc) must ship an aarch64 Linux binary.
 
 ## Tests and CI
 

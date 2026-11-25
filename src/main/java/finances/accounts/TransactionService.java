@@ -112,12 +112,25 @@ public class TransactionService {
      * bank; {@link #deliver} never deletes.
      */
     public BankDeliveryReport deliverFromBank(long accountId, Collection<DeliveredTransaction> batch, LocalDate coveredFrom) {
+        return deliverFromBank(accountId, batch, coveredFrom, true);
+    }
+
+    /**
+     * Like {@link #deliverFromBank(long, Collection, LocalDate)}; with {@code complete} false the batch is stored but no pending
+     * row is removed or marked: a fetch from which a transaction was refused is not a complete picture of what the bank reports
+     * (the refused one may be the booked version of a pending row).
+     */
+    public BankDeliveryReport deliverFromBank(long accountId, Collection<DeliveredTransaction> batch, LocalDate coveredFrom,
+            boolean complete) {
         Objects.requireNonNull(batch);
         return inTransaction.execute(status -> {
             Tally tally = store(accountId, Source.BANK, batch.stream());
             String now = Instant.now(clock).toString();
             int removed = 0;
             int kept = 0;
+            if (!complete) {
+                return new BankDeliveryReport(tally.report(), 0, 0);
+            }
             List<PendingRow> pending = jdbc.sql("""
                             select t.id, t.no_longer_reported_at, n.transaction_id is not null as has_note
                             from transactions t left join transaction_note n on n.transaction_id = t.id
@@ -234,12 +247,13 @@ public class TransactionService {
         jdbc.sql("""
                         update transactions set booking_date = ?, value_date = ?, amount_cents = ?, counterparty_name = ?,
                             counterparty_iban = ?, description = ?, status = ?, source = ?, reference = ?, fingerprint = ?,
-                            raw = ?, last_seen_at = ?, claimed_pending = max(claimed_pending, ?)
+                            raw = ?, last_seen_at = ?, claimed_pending = max(claimed_pending, ?),
+                            dated_by_fetch = case when ? = 1 then dated_by_fetch else 0 end
                         where id = ?
                         """)
                 .params(wanted.bookingDate(), wanted.valueDate(), wanted.amountCents(), wanted.counterpartyName(),
                         wanted.counterpartyIban(), wanted.description(), wanted.status(), wanted.source(), wanted.reference(),
-                        fingerprint, wanted.raw(), now, claimed ? 1 : 0, stored.id())
+                        fingerprint, wanted.raw(), now, claimed ? 1 : 0, t.datedByFetch() && t.status() == TransactionStatus.PENDING ? 1 : 0, stored.id())
                 .update();
         tally.updated++;
     }

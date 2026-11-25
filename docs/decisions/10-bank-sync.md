@@ -101,7 +101,7 @@ The review in CI passed pull request 36 and left four findings it was not sure a
    `CRDT`) says the same thing twice and is accepted. A sign that **contradicts** it is refused as that one transaction
    (`BankMapping.Contradiction`, no message): it is counted in the run's `refused` and the rest of the batch is stored. Never a
    guess. `BankMapping.cents` itself still takes only unsigned text, and anything else that cannot be read still fails the whole
-   fetch. A refused item is never stored, so the pending-row removal (which only looks at rows that exist) is unaffected.
+   fetch. A fetch that refused something is not a complete picture (the refused item may be the booked version of a pending row), so it stores the rest but removes and marks no pending row (`deliverFromBank(..., complete=false)`); the next clean fetch does.
 2. **Loopback address** (`BankViews.userHeaders`). Held: behind `tailscale serve` the remote address is the loopback address and
    it went out as `Psu-Ip-Address`. Now no such header goes out when the address is loopback, link-local or unspecified (also
    IPv4-mapped ones), or is not a literal IP address (nothing is looked up). Forwarded headers are still not trusted. Consequence,
@@ -114,7 +114,7 @@ The review in CI passed pull request 36 and left four findings it was not sure a
    the flag when `pendingBankDate` gave it its first-seen day). For such rows the window is `PENDING_TAKEOVER_DAYS` days on both
    sides of the booking date (before: only the days before it). Every other rule (amount, counterparty, description, oldest first,
    not a row of this batch) is unchanged; a pending row the bank dated itself keeps the old, one-sided window. Rows stored before
-   V6 have 0, so they keep the old rule. The flag is written when a row is inserted and never changed.
+   V6 have 0, so they keep the old rule. The flag is set only when a row is inserted; a later delivery with a date from the bank clears it, and none sets it on an existing row. Known limits: a refused transaction is not stored, and once the overlap window has passed the bank no longer returns it, so it stays missing (the run's `refused` count is the trace); among several candidates the oldest pending row is still taken over first, flagged or not; and a second identical undated item can borrow the first-seen day of a row the bank dated and then carries the flag.
 4. **Session files** (`SessionFiles`). Held: the file was keyed by the consent id only. Each session file now has a companion
    `enable-banking-session-<id>.tag` with a random tag, and the same tag is in `bank_consent.session_tag`; a file is read only when
    the two agree, else the consent shows as needing *Renew*. The tag is a separate file so the session file keeps holding just the

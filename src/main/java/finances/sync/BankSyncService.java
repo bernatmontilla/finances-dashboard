@@ -236,7 +236,7 @@ public class BankSyncService {
                     accounts.addBankBalance(link.accountId(), finances.money.Money.eur(balance.cents()), balance.date(),
                             balance.type(), balance.asOf(), balance.basis());
                 }
-                BankDeliveryReport delivered = transactions.deliverFromBank(link.accountId(), fetched.batch(), from);
+                BankDeliveryReport delivered = transactions.deliverFromBank(link.accountId(), fetched.batch(), from, fetched.refused() == 0);
                 DeliveryReport d = delivered.delivered();
                 store.insertRun(link.accountId(), started, Instant.now(clock), trigger, headers.sent(), true, null,
                         d.added(), d.updated(), d.known(), d.refused() + fetched.refused(), delivered.pendingRemoved(), delivered.pendingKept());

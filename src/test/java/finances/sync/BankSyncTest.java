@@ -635,6 +635,22 @@ class BankSyncTest {
     }
 
     @Test
+    void aFetchWithARefusedTransactionRemovesNoPendingRow() {
+        h.bank.transactionsBody(transactionsJson(item("P-1", "PDNG", "8.00", "DBIT", "2026-11-25", "Day pass")));
+        linkBothAsNewAccounts();
+        assertThat(everydayTransactions()).singleElement().satisfies(t -> assertThat(t.pending()).isTrue());
+
+        // The booked version of it comes with a contradicting sign: refused, so the pending row is not "no longer reported".
+        h.bank.transactionsBody(transactionsJson(item("B-1", "BOOK", "-8.00", "CRDT", "2026-11-25", "Day pass")));
+        nextDay();
+        h.sync.syncAll(SyncTrigger.SCHEDULED, Map.of());
+
+        assertThat(everydayTransactions()).singleElement().satisfies(t -> assertThat(t.pending()).isTrue());
+        assertThat(lastRun(everyday()).refused()).isEqualTo(1);
+        assertThat(lastRun(everyday()).pendingRemoved()).isZero();
+    }
+
+    @Test
     void aSessionFileLeftBehindByAnotherConsentIsNeverUsed() throws Exception {
         long consent = linkBothAsNewAccounts();
         // After a restore, a file of another consent that had the same id is lying in the secrets folder.

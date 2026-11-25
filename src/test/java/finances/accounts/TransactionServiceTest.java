@@ -579,6 +579,22 @@ class TransactionServiceTest {
     }
 
     @Test
+    void aLaterDeliveryWithADateFromTheBankClearsTheMarkAndTheWiderWindowGoesWithIt() {
+        DeliveredTransaction undated = new DeliveredTransaction(DAY, null, -800, "EUR", "Example Gym", SHOP_IBAN, "Day pass",
+                TransactionStatus.PENDING, "R1", "raw:undated", true);
+        DeliveredTransaction dated = new DeliveredTransaction(DAY, null, -800, "EUR", "Example Gym", SHOP_IBAN, "Day pass",
+                TransactionStatus.PENDING, "R1", "raw:dated", false);
+        deliverBank(undated);
+        assertThat(jdbc.sql("select dated_by_fetch from transactions").query(Integer.class).single()).isOne();
+
+        deliverBank(dated);
+
+        assertThat(jdbc.sql("select dated_by_fetch from transactions").query(Integer.class).single()).isZero();
+        assertThat(deliverBank(booked(DAY.minusDays(2), -800, "Example Gym", "Day pass", "B1")).added()).isEqualTo(1);
+        assertThat(count()).isEqualTo(2);
+    }
+
+    @Test
     void aBookedRowIsNeverMarkedAsDatedByTheFetch() {
         deliverBank(new DeliveredTransaction(DAY, null, -800, "EUR", "Example Gym", SHOP_IBAN, "Day pass", TransactionStatus.BOOKED, "B1", "raw", true));
 

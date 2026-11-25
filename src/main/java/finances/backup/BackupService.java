@@ -395,7 +395,12 @@ public final class BackupService {
                     throw failure;
                 }
                 if (hadDatabase) {
-                    Files.move(replaced, previous(), StandardCopyOption.REPLACE_EXISTING);
+                    try {
+                        Files.move(replaced, previous(), StandardCopyOption.REPLACE_EXISTING);
+                    } catch (IOException keptAside) {
+                        // The restore itself succeeded and must not be reported as failed; the old
+                        // database stays as finances.replaced.db (docs/install.md).
+                    }
                 }
                 return null;
             });
@@ -426,7 +431,9 @@ public final class BackupService {
     }
 
     private void migrate(Path database) {
-        SQLiteDataSource dataSource = new SQLiteDataSource(config());
+        SQLiteConfig config = config();
+        config.enforceForeignKeys(true); // as the application's own connections: a migration behaves the same
+        SQLiteDataSource dataSource = new SQLiteDataSource(config);
         dataSource.setUrl("jdbc:sqlite:" + database);
         Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
     }

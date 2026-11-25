@@ -214,6 +214,8 @@ Exit status: 0 done, 1 refused or failed (nothing changed), 2 wrong use or `--ye
 daily copy, put the `backup` line in a cron job or a systemd user timer of your own, and prune old
 files there; the application never deletes your backups.
 
+A restore briefly needs room for the uploaded file about three times over in `tmp/` (the upload, its copy and the checked database), so leave free space of a few times the backup size on the disk of the data folder; the command line restore needs one copy less.
+
 If the disk is full, a backup fails without leaving a partial file and the database in use is
 untouched; so is a restore. If a restore is cut off by a power failure at the very moment of the
 swap, the database from before is in `finances.replaced.db` next to it: rename it to `finances.db`

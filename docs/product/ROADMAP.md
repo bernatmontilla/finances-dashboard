@@ -35,9 +35,30 @@ Acceptance:
 
 Plan issue: #14
 
+## M2: free to spend
+**Delivers**: the after-tax source, the two headline numbers with their build-up, reservations and
+fixed costs.
+
+Acceptance:
+- [ ] With an after-tax source configured, the overview shows *Private free to spend* and
+      *Business available* side by side, each with its age, and never a sum of the two.
+- [ ] Each number's build-up adds up to it to the cent, and lists the business accounts' gross
+      balances apart, not counted.
+- [ ] Stopping the after-tax source keeps the last value and marks the business number stale.
+- [ ] Without a source configured, no business number is shown and nothing fails.
+- [ ] A new reservation lowers the number of its scope by what is reserved so far, and shows the
+      amount to set aside per month.
+- [ ] Closing a reservation against its payment raises the number again; a yearly one starts over.
+- [ ] A fixed cost added by hand appears in the monthly total and, until its charge arrives, in
+      *still to come this month*; the headline numbers do not change because of it.
+- [ ] After a sync, repeating payments are proposed as fixed costs; confirming one adds it,
+      rejecting one keeps it from coming back.
+- [ ] A fixed cost whose charge changed price or did not arrive is flagged.
+- [ ] Reservations and fixed costs survive a backup and restore.
+
+Plan issue: to be filed (without the `plan` label until M1 is accepted)
+
 ## Later
-- M2 Free to spend: the after-tax source, the two headline numbers with their build-up,
-  reservations, fixed costs.
 - M3 Categorisation: categories, rules, review inbox, transfers, splits, search, notes, CSV export.
 - M4 Budgets, monthly and yearly review, forecast.
 - M5 Wealth: savings goals, investments, debts and interest, net worth, runway.

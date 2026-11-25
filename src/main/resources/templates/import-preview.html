@@ -41,6 +41,11 @@
       <p th:text="#{import.summary(${view.read}, ${view.importable}, ${view.refusedCount})}"></p>
       <p th:if="${view.hasBalance()}" th:text="#{import.balanceFound(${view.balance}, ${view.balanceDate})}"></p>
       <p th:if="${view.balanceUndeterminable}" class="notice" th:text="#{import.balance.not_determinable}"></p>
+      <p th:if="${view.needsConfirmation()}" class="notice warning" role="alert">
+        <span th:text="#{import.warning.duplicates}"></span>
+        <span th:text="#{import.warning.duplicates.count(${view.storedInRange})}"></span>
+      </p>
+      <p th:if="${view.allIncoming}" class="notice warning" role="alert" th:text="#{import.warning.income}"></p>
       <ul class="list" th:if="${view.hasRefused()}">
         <li th:each="r : ${view.refused}" class="error">
           <span th:text="#{import.refusedRow(${r.row})}"></span>
@@ -96,6 +101,13 @@
                     th:text="${view.header} ? #{import.columnNamed(${i + 1}, ${view.headers[i]})} : #{import.column(${i + 1})}"></option>
           </th:block>
         </select>
+      </p>
+
+      <p th:if="${view.needsConfirmation()}">
+        <label for="confirmDuplicates" class="check">
+          <input id="confirmDuplicates" name="confirmDuplicates" type="checkbox" th:value="${view.confirmKey}">
+          <span th:text="#{import.warning.confirm}"></span>
+        </label>
       </p>
 
       <p class="actions">

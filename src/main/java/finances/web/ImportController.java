@@ -6,6 +6,7 @@ import finances.accounts.AccountService;
 import finances.importing.CsvImportException;
 import finances.importing.CsvImportService;
 import finances.importing.CsvMapping;
+import finances.importing.ImportCheck;
 import finances.importing.ImportReport;
 import finances.importing.ParsedFile;
 import finances.importing.PendingUploads;
@@ -105,10 +106,19 @@ class ImportController {
         }
         try {
             CsvMapping mapping = ImportViews.mapping(form);
-            ImportReport report = importing.importFile(id, bytes, mapping);
-            uploads.drop(token); // the file does not outlive the import
-            model.addAttribute("view", ImportViews.report(account, report));
-            return "import-report";
+            ParsedFile parsed = importing.preview(id, bytes, mapping); // the one full read of this request
+            try {
+                ImportReport report = importing.importParsed(id, parsed, mapping, ImportViews.confirmKey(mapping).equals(form.get("confirmDuplicates")));
+                uploads.drop(token); // the file does not outlive the import
+                model.addAttribute("view", ImportViews.report(account, report));
+                return "import-report";
+            } catch (CsvImportException e) {
+                if (e.reason() != CsvImportException.Reason.CONFIRMATION_REQUIRED) {
+                    throw e;
+                }
+                // Nothing was imported: the preview shows the warning again, next to the box to tick.
+                return refused(response, model, e, previewPage(model, account, token, bytes, mapping, parsed));
+            }
         } catch (CsvImportException e) {
             return refused(response, model, e, previewPage(model, account, token, bytes, previewMapping(form, id, bytes)));
         }
@@ -131,8 +141,13 @@ class ImportController {
     }
 
     private String previewPage(Model model, Account account, String token, byte[] bytes, CsvMapping mapping) {
-        ParsedFile parsed = mapping.isComplete() ? importing.preview(account.id(), bytes, mapping) : null;
-        model.addAttribute("view", ImportViews.preview(account, token, mapping, importing.head(bytes, mapping), parsed));
+        return previewPage(model, account, token, bytes, mapping, mapping.isComplete() ? importing.preview(account.id(), bytes, mapping) : null);
+    }
+
+    /** The preview of a file that is already read ({@code parsed} is null while the mapping is incomplete). */
+    private String previewPage(Model model, Account account, String token, byte[] bytes, CsvMapping mapping, ParsedFile parsed) {
+        ImportCheck check = parsed == null ? ImportCheck.NONE : importing.check(account.id(), mapping, parsed);
+        model.addAttribute("view", ImportViews.preview(account, token, mapping, importing.head(bytes, mapping), parsed, check));
         model.addAttribute("delimiters", ImportViews.DELIMITERS);
         model.addAttribute("encodings", ImportViews.ENCODINGS);
         model.addAttribute("decimals", ImportViews.DECIMALS);

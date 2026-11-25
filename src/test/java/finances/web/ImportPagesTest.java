@@ -95,7 +95,11 @@ class ImportPagesTest {
     }
 
     private long createAccount(String name, String source) throws Exception {
-        HttpResponse<String> response = post("/accounts", Map.of("name", name, "scope", "private", "kind", "current", "iban", "", "source", source));
+        return createAccount(name, source, "current");
+    }
+
+    private long createAccount(String name, String source, String kind) throws Exception {
+        HttpResponse<String> response = post("/accounts", Map.of("name", name, "scope", "private", "kind", kind, "iban", "", "source", source));
         assertThat(response.statusCode()).isEqualTo(302);
         Matcher id = Pattern.compile("/accounts/(\\d+)$").matcher(response.headers().firstValue("Location").orElseThrow());
         assertThat(id.find()).isTrue();
@@ -257,6 +261,61 @@ class ImportPagesTest {
         long csv = createAccount("Typed balance", "csv");
         assertThat(post("/accounts/" + csv + "/balances", Map.of("amount", "100,00", "date", "2026-01-01")).statusCode()).isEqualTo(302);
         assertThat(get("/accounts/" + csv).body()).contains("€100.00");
+    }
+
+    // ----- the warnings of #37
+
+    private static final String TWICE = "may be stored a second time";
+
+    @Test
+    void aChangedMappingOnStoredRowsShowsAWarningAndNeedsTheBoxTicked() throws Exception {
+        long id = createAccount("Changed mapping", "csv");
+        byte[] file = finances.importing.CsvFixtures.semicolonDebitCredit();
+        Map<String, String> saved = formOf(upload("/accounts/" + id + "/import", file).body());
+        assertThat(post("/accounts/" + id + "/import/confirm", saved).body()).contains("Added: 5");
+
+        // The same mapping again: no warning, no box.
+        HttpResponse<String> same = upload("/accounts/" + id + "/import", file);
+        assertThat(same.body()).doesNotContain(TWICE).doesNotContain("confirmDuplicates");
+
+        // The description column left out: the warning, the number of stored rows and the box.
+        Map<String, String> changed = formOf(same.body());
+        changed.put("description", "-1");
+        HttpResponse<String> warned = post("/accounts/" + id + "/import/preview", changed);
+        assertThat(warned.statusCode()).isEqualTo(200);
+        assertThat(warned.body()).contains("Warning:").contains(TWICE).contains("Transactions already stored on these dates: 5")
+                .contains("id=\"confirmDuplicates\"");
+
+        // Without the box nothing is imported, and the preview comes back with the warning.
+        HttpResponse<String> refused = post("/accounts/" + id + "/import/confirm", changed);
+        assertThat(refused.statusCode()).isEqualTo(400);
+        assertThat(refused.body()).contains("Nothing was imported.").contains(TWICE).contains("id=\"confirmDuplicates\"");
+
+        // The tick stands for the mapping that was warned about: another mapping needs its own tick.
+        Matcher key = Pattern.compile("id=\"confirmDuplicates\" name=\"confirmDuplicates\" type=\"checkbox\" value=\"([0-9a-f]+)\"").matcher(warned.body());
+        assertThat(key.find()).isTrue();
+        Map<String, String> other = new LinkedHashMap<>(changed);
+        other.put("confirmDuplicates", key.group(1));
+        other.put("name", "-1");
+        assertThat(post("/accounts/" + id + "/import/confirm", other).statusCode()).isEqualTo(400);
+
+        changed.put("confirmDuplicates", key.group(1));
+        HttpResponse<String> report = post("/accounts/" + id + "/import/confirm", changed);
+        assertThat(report.statusCode()).isEqualTo(200);
+        assertThat(report.body()).contains("Import report").doesNotContain("Added: 0");
+    }
+
+    @Test
+    void aFileWithOnlyPositiveAmountsOnACurrentAccountWarnsButDoesNotBlock() throws Exception {
+        byte[] income = "Date;Amount\n01-06-2026;5,00\n02-06-2026;7,50\n".getBytes(StandardCharsets.UTF_8);
+        long current = createAccount("Only income", "csv");
+        HttpResponse<String> preview = upload("/accounts/" + current + "/import", income);
+        assertThat(preview.body()).contains("Warning:").contains("stored as money coming in").contains("debit and credit columns")
+                .doesNotContain("confirmDuplicates");
+        assertThat(post("/accounts/" + current + "/import/confirm", formOf(preview.body())).body()).contains("Added: 2");
+
+        long savings = createAccount("Only income savings", "csv", "savings");
+        assertThat(upload("/accounts/" + savings + "/import", income).body()).doesNotContain("money coming in");
     }
 
     @Test

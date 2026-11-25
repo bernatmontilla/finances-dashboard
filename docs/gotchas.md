@@ -17,6 +17,13 @@ mention the test here.
 - A bank that books a pending item under another date and gives no reference twice is stored twice:
   the fingerprint includes the booking date (`docs/decisions/8-transactions-store.md`).
 
+- Backup and restore: `VACUUM INTO` is the consistent snapshot while the app writes (never copy `finances.db`
+  while it runs: the WAL file holds committed data). A restore replaces the file, so every open connection
+  must be closed first: all connections come from `GatedDataSource`; a new place that opens SQLite on its
+  own must take the gate too (`docs/decisions/12-backup-and-restore.md`).
+- Anything that holds the owner's data while it travels (an upload, a snapshot) goes in `<data>/tmp/`
+  (`DataFolder.SCRATCH_FOLDER`), never in the system temporary folder.
+
 ## Enable Banking (documented, not yet tried against a real account: `docs/decisions/6-enable-banking.md`)
 
 - Restricted mode (own accounts, free) returns only the accounts linked in the Control Panel; any

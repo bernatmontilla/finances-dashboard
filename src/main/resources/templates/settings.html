@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title th:text="#{settings.title}"></title>
+  <link rel="stylesheet" th:href="@{/app.css}">
+</head>
+<body>
+  <main>
+    <nav th:replace="~{fragments :: nav}"></nav>
+    <h1 th:text="#{settings.title}"></h1>
+    <p th:replace="~{fragments :: error}"></p>
+    <p th:if="${notice != null}" class="notice" role="status" th:text="#{${notice}}"></p>
+
+    <section>
+      <h2 th:text="#{backup.title}"></h2>
+      <p th:text="#{backup.intro}"></p>
+      <p class="notice" th:text="#{backup.secrets}"></p>
+
+      <h3 th:text="#{backup.download.title}"></h3>
+      <form method="post" th:action="@{/settings/backup/download}">
+        <p class="actions">
+          <button type="submit" th:text="#{backup.download}"></button>
+        </p>
+      </form>
+
+      <h3 th:text="#{backup.restore.title}"></h3>
+      <p th:text="#{backup.restore.intro}"></p>
+      <form method="post" th:action="@{/settings/backup/check}" enctype="multipart/form-data">
+        <p>
+          <label for="file" th:text="#{backup.restore.file}"></label>
+          <input id="file" name="file" type="file" accept=".zip,application/zip" required>
+        </p>
+        <p class="actions">
+          <button type="submit" class="secondary" th:text="#{backup.restore.check}"></button>
+        </p>
+      </form>
+
+      <th:block th:if="${hasPrevious}">
+        <h3 th:text="#{backup.undo.title}"></h3>
+        <p th:text="#{backup.undo.intro(${previousFrom})}"></p>
+        <form method="post" th:action="@{/settings/backup/undo}">
+          <p>
+            <label for="undo-confirm" th:text="#{backup.undo.type(${undoWord})}"></label>
+            <input id="undo-confirm" name="confirm" type="text" autocomplete="off" required>
+          </p>
+          <p class="actions">
+            <button type="submit" class="danger" th:text="#{backup.undo}"></button>
+          </p>
+        </form>
+      </th:block>
+    </section>
+  </main>
+</body>
+</html>

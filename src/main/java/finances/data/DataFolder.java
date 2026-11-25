@@ -15,7 +15,11 @@ import java.nio.file.StandardOpenOption;
  */
 public final class DataFolder implements AutoCloseable {
 
-    static final String DATABASE_FILE = "finances.db";
+    public static final String DATABASE_FILE = "finances.db";
+    /** The database as it was before the last restore, kept so that one restore can be undone. */
+    public static final String PREVIOUS_DATABASE_FILE = "finances.previous.db";
+    /** Where uploads, backups in the making and restores in the making live: inside the folder, never web-visible. */
+    public static final String SCRATCH_FOLDER = "tmp";
     static final String LOCK_FILE = "finances.lock";
 
     private final Path path;
@@ -50,6 +54,7 @@ public final class DataFolder implements AutoCloseable {
             if (lock == null) {
                 throw inUse(folder);
             }
+            clearScratch(folder);
             return new DataFolder(folder, channel, lock);
         } catch (OverlappingFileLockException e) {
             closeQuietly(channel);
@@ -60,6 +65,23 @@ public final class DataFolder implements AutoCloseable {
         } catch (RuntimeException e) {
             closeQuietly(channel);
             throw e;
+        }
+    }
+
+    /** Whatever an earlier run left in the scratch folder (a cut-off upload, a half-made backup) is stale. */
+    private static void clearScratch(Path folder) {
+        Path scratch = folder.resolve(SCRATCH_FOLDER);
+        if (!Files.isDirectory(scratch)) {
+            return;
+        }
+        try (var entries = Files.list(scratch)) {
+            for (Path entry : entries.toList()) {
+                if (Files.isRegularFile(entry)) {
+                    Files.deleteIfExists(entry);
+                }
+            }
+        } catch (IOException e) {
+            throw new DataFolderException("The scratch folder of the data folder " + folder + " cannot be cleaned.", e);
         }
     }
 
@@ -84,6 +106,10 @@ public final class DataFolder implements AutoCloseable {
 
     public Path databaseFile() {
         return path.resolve(DATABASE_FILE);
+    }
+
+    public Path previousDatabaseFile() {
+        return path.resolve(PREVIOUS_DATABASE_FILE);
     }
 
     @Override

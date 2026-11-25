@@ -38,9 +38,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    env:
-      GH_TOKEN: ${{ github.token }}
-      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -54,6 +51,10 @@ jobs:
           cache: maven
 
       - name: Release every merge since the last release
+        env:
+          # Only this step has the token, and the build below runs without it.
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
           summary() { echo "$*" | tee -a "$GITHUB_STEP_SUMMARY"; }
@@ -84,10 +85,11 @@ jobs:
             fi
             number="$(jq -r '.number' <<<"$pr")"
             level=""
-            for label in $(jq -r '.labels[].name | select(startswith("release:")) | sub("^release:"; "")' <<<"$pr"); do
+            while IFS= read -r label; do
+              [[ -n "$label" ]] || continue
               [[ -n "$(rank "$label")" ]] || { summary "#$number: unknown label release:$label ignored."; continue; }
               if [[ -z "$level" || "$(rank "$label")" -gt "$(rank "$level")" ]]; then level="$label"; fi
-            done
+            done < <(jq -r '.labels[].name | select(startswith("release:")) | sub("^release:"; "")' <<<"$pr")
             if [[ -z "$level" ]]; then
               summary "#$number: no release:* label, nothing published."
               continue
@@ -116,7 +118,13 @@ jobs:
             # Build exactly this merge, with the version inside the jar (pom.xml: ${revision}).
             git checkout -q --detach "$sha"
             rm -rf target dist
-            MAVEN_ARGS="-Drevision=$version" bash scripts/dev/build.sh
+            if ! env -u GH_TOKEN MAVEN_ARGS="-Drevision=$version" bash scripts/dev/build.sh; then
+              # A merge that does not build must not stop the merges after it: the fix that
+              # follows contains it. Only the commit CI just built is a hard failure.
+              if [[ "$sha" == "$HEAD_SHA" ]]; then echo "::error::#$number does not build."; exit 1; fi
+              summary "#$number: does not build, skipped (a later merge can still be released)."
+              continue
+            fi
             info="$(unzip -p target/finances-dashboard.jar META-INF/build-info.properties)"
             grep -qx "build.version=$version" <<<"$info" ||
               { echo "::error::The jar does not carry version $version."; exit 1; }

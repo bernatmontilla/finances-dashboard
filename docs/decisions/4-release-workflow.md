@@ -32,3 +32,12 @@
 - **Known limit.** A merge made with the workflow's own token starts no workflow (see
   `auto-merge.yml`): without the secret `AUTOMERGE_TOKEN` an automatically merged pull request is
   not released. A risky pull request is merged by the owner, which does start it.
+- **A merge that does not build** is skipped (named in the job summary) when it is not the commit CI
+  just built, so one broken merge never stops the releases after it; the next run tries it again and
+  skips it again until a release tag lies after it. For the newest commit the job fails.
+- **The token** is in the environment of the one step that calls `gh`, and the build runs with
+  `env -u GH_TOKEN`, so no Maven plugin or test can read a token that can write releases. Not done:
+  pinning the actions to commit SHAs (the other workflows use tags too).
+- **Known limits.** Before the first release only the newest commit counts, so if two merges arrive
+  at once and GitHub replaces the first one's waiting run, the first is not released. When one pull
+  request has `release:none` and another `release:*` label, the other label wins.

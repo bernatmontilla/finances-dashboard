@@ -12,6 +12,11 @@ mention the test here.
 - The same transaction can arrive first as pending and later as booked with another reference.
 - SQLite allows one writer: keep write transactions short, and never hold one across an HTTP call.
 
+- Transactions are stored only through `TransactionService.deliver` (#8); it never writes the owner's
+  note, so a new hand-entered field goes in its own table, not in `transactions`.
+- A bank that books a pending item under another date and gives no reference twice is stored twice:
+  the fingerprint includes the booking date (`docs/decisions/8-transactions-store.md`).
+
 ## Enable Banking (documented, not yet tried against a real account: `docs/decisions/6-enable-banking.md`)
 
 - Restricted mode (own accounts, free) returns only the accounts linked in the Control Panel; any
@@ -42,6 +47,9 @@ mention the test here.
 - arm64: a dependency with native code (sqlite-jdbc) must ship an aarch64 Linux binary.
 
 ## Tests and CI
+
+- Thymeleaf's `~{fragments :: nav}` also selects every other `<nav>` element in that file, not only the
+  one with `th:fragment="nav"`: never put another `<nav>` in `fragments.html`. Methods read by a template on a package-private record must be `public`.
 
 - On a CI failure, read the check-run annotations:
   `gh api repos/{owner}/{repo}/check-runs/<job id>/annotations`.

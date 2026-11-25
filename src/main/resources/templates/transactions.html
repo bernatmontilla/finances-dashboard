@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title th:text="#{transactions.all.title}"></title>
+  <link rel="stylesheet" th:href="@{/app.css}">
+</head>
+<body>
+  <main>
+    <nav th:replace="~{fragments :: nav}"></nav>
+    <h1 th:text="#{transactions.all.title}"></h1>
+    <th:block th:replace="~{fragments :: transactions(${transactions}, true, ${transactionsPath})}"></th:block>
+    <section th:unless="${groups.empty}">
+      <h2 th:text="#{transactions.deliveries}"></h2>
+      <ul class="list">
+        <th:block th:each="group : ${groups}">
+          <li th:each="row : ${group.rows}">
+            <a th:href="@{/accounts/{id}(id=${row.id})}" th:text="${row.name}"></a>
+            <span th:replace="~{fragments :: delivered(${row.delivery})}"></span>
+          </li>
+        </th:block>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

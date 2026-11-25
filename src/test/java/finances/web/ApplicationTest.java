@@ -61,7 +61,9 @@ class ApplicationTest {
     void overviewShowsNameVersionAndNoAccountsYet() throws Exception {
         HttpResponse<String> response = get("/");
         assertThat(response.statusCode()).isEqualTo(200);
-        assertThat(response.body()).contains("Finances dashboard").contains("No accounts yet").contains("Version 0.1.0");
+        assertThat(response.body()).contains("Finances dashboard").contains("No accounts yet");
+        // The version is the released one (#4), so only its shape is fixed here.
+        assertThat(response.body()).containsPattern("Version \\d+\\.\\d+\\.\\d+");
         assertThat(response.body()).contains("name=\"viewport\"");
     }
 
@@ -76,7 +78,7 @@ class ApplicationTest {
     void healthAnswers200WithTheVersionWhenTheDatabaseIsReachable() throws Exception {
         HttpResponse<String> response = get("/health");
         assertThat(response.statusCode()).isEqualTo(200);
-        assertThat(response.body()).contains("\"status\":\"ok\"").contains("\"version\":\"0.1.0");
+        assertThat(response.body()).contains("\"status\":\"ok\"").containsPattern("\"version\":\"\\d+\\.\\d+\\.\\d+");
     }
 
     @Test

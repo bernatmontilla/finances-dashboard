@@ -1,0 +1,142 @@
+# Publishes a GitHub Release for every merge to main that changes the application
+# (docs/decisions/4-release-workflow.md has how the version is worked out).
+#
+#   Starts only when the workflow "CI" has finished with success for a PUSH to main. A pull request,
+#   from a fork or not, never starts it; and as a workflow_run workflow it runs from main's copy of
+#   this file, so a branch cannot change the rules it is released by.
+#   Builds with bash scripts/dev/build.sh and publishes exactly two assets:
+#   finances-dashboard.jar and finances-dashboard.jar.sha256 (public names: AGENTS.md rule 4).
+#   Always on GitHub's runners: RUNS_ON is deliberately not used here (a public repository must not
+#   build releases on a private machine).
+#
+# Token: with the secret AUTOMERGE_TOKEN a merge made by auto-merge.yml is a push that starts CI, and
+# so this workflow. Without it GitHub starts no workflow for that merge (see auto-merge.yml).
+name: Release
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+# No permission by default; the release job asks for the one it needs.
+permissions: {}
+
+# Releases are made one at a time. A waiting run that is replaced by a newer one loses nothing: every
+# run releases all merges since the last release, oldest first.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: >-
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Release every merge since the last release
+        env:
+          # Only this step has the token, and the build below runs without it.
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          summary() { echo "$*" | tee -a "$GITHUB_STEP_SUMMARY"; }
+          rank() { case "$1" in none) echo 0;; patch) echo 1;; minor) echo 2;; major) echo 3;; esac; }
+
+          git fetch --force --tags origin
+          last_tag="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)"
+
+          # Which commits are still unreleased, oldest first. Before the first release only the
+          # commit CI just built counts: the history before this workflow existed is not released.
+          if [[ -z "$last_tag" ]]; then
+            commits="$HEAD_SHA"
+          else
+            commits="$(git rev-list --first-parent --reverse "$last_tag..$HEAD_SHA")"
+          fi
+          if [[ -z "$commits" ]]; then
+            summary "Nothing to release: ${last_tag:-no release yet} already contains ${HEAD_SHA:0:7}."
+            exit 0
+          fi
+
+          for sha in $commits; do
+            # The pull request that was merged into main as this commit, and its release label.
+            pr="$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/pulls" \
+                  --jq '[.[] | select(.merged_at != null and .base.ref == "main" and .merge_commit_sha == "'"$sha"'")] | .[0] // empty')"
+            if [[ -z "$pr" ]]; then
+              summary "${sha:0:7}: no pull request merged as this commit, nothing published."
+              continue
+            fi
+            number="$(jq -r '.number' <<<"$pr")"
+            level=""
+            while IFS= read -r label; do
+              [[ -n "$label" ]] || continue
+              [[ -n "$(rank "$label")" ]] || { summary "#$number: unknown label release:$label ignored."; continue; }
+              if [[ -z "$level" || "$(rank "$label")" -gt "$(rank "$level")" ]]; then level="$label"; fi
+            done < <(jq -r '.labels[].name | select(startswith("release:")) | sub("^release:"; "")' <<<"$pr")
+            if [[ -z "$level" ]]; then
+              summary "#$number: no release:* label, nothing published."
+              continue
+            fi
+            if [[ "$level" == "none" ]]; then
+              summary "#$number: release:none, nothing published."
+              continue
+            fi
+
+            # The version: bump the last release's version; the first release is 0.1.0.
+            if [[ -z "$last_tag" ]]; then
+              version="0.1.0"
+            else
+              IFS=. read -r major minor patch <<<"${last_tag#v}"
+              case "$level" in
+                major) version="$((major + 1)).0.0";;
+                minor) version="$major.$((minor + 1)).0";;
+                patch) version="$major.$minor.$((patch + 1))";;
+              esac
+            fi
+            if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+              echo "::error::The tag v$version already exists; refusing to reuse a version."
+              exit 1
+            fi
+
+            # Build exactly this merge, with the version inside the jar (pom.xml: ${revision}).
+            git checkout -q --detach "$sha"
+            rm -rf target dist
+            if ! env -u GH_TOKEN MAVEN_ARGS="-Drevision=$version" bash scripts/dev/build.sh; then
+              # A merge that does not build must not stop the merges after it: the fix that
+              # follows contains it. Only the commit CI just built is a hard failure.
+              if [[ "$sha" == "$HEAD_SHA" ]]; then echo "::error::#$number does not build."; exit 1; fi
+              summary "#$number: does not build, skipped (a later merge can still be released)."
+              continue
+            fi
+            info="$(unzip -p target/finances-dashboard.jar META-INF/build-info.properties)"
+            grep -qx "build.version=$version" <<<"$info" ||
+              { echo "::error::The jar does not carry version $version."; exit 1; }
+            mkdir dist
+            cp target/finances-dashboard.jar dist/
+            (cd dist && sha256sum finances-dashboard.jar > finances-dashboard.jar.sha256 && sha256sum -c finances-dashboard.jar.sha256)
+
+            # Release notes: the pull request's title and a link to it, nothing else.
+            { jq -r '.title' <<<"$pr"; echo; jq -r '.html_url' <<<"$pr"; } > dist-notes.md
+            gh release create "v$version" dist/finances-dashboard.jar dist/finances-dashboard.jar.sha256 \
+              --title "v$version" --notes-file dist-notes.md --target "$sha"
+            git tag "v$version" "$sha"
+            last_tag="v$version"
+            summary "#$number: published v$version (release:$level)."
+          done

@@ -126,4 +126,18 @@ class GuardTest {
         }
         assertThat(found).as("the data folder has no default; tests use a temporary one").isEmpty();
     }
+
+    @Test
+    void theReleaseWorkflowKeepsItsPromises() throws IOException {
+        // Issue #4: a release is built on GitHub's runners only, never for a pull request, with
+        // the least permission, and with the two public asset names (AGENTS.md hard rule 4).
+        String workflow = Files.readString(Path.of(".github/workflows/release.yml"))
+                .lines().filter(line -> !line.strip().startsWith("#")).reduce("", (a, b) -> a + b + "\n");
+        assertThat(workflow).doesNotContain("RUNS_ON").doesNotContain("pull_request:").doesNotContain("pull_request_target").doesNotContain("self-hosted");
+        assertThat(workflow).contains("workflow_run").contains("workflow_run.event == 'push'");
+        assertThat(workflow).contains("finances-dashboard.jar").contains("finances-dashboard.jar.sha256");
+        assertThat(workflow).contains("permissions: {}").contains("contents: write");
+        assertThat(workflow.split("contents: write", -1)).as("contents: write on the release job only").hasSize(2);
+        assertThat(workflow).doesNotContain("pull-requests: write").doesNotContain("write-all");
+    }
 }

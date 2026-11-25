@@ -6,6 +6,7 @@ import finances.accounts.AccountService;
 import finances.accounts.DeliveredTransaction;
 import finances.accounts.DeliveryReport;
 import finances.accounts.ImportedBalance;
+import finances.accounts.Kind;
 import finances.accounts.Source;
 import finances.accounts.TransactionService;
 import finances.money.Money;
@@ -26,6 +27,9 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class CsvImportService {
+
+    /** How many data rows decide whether a saved mapping fits a file. */
+    static final int FIT_ROWS = 60;
 
     private final AccountService accounts;
     private final TransactionService transactions;
@@ -90,7 +94,8 @@ public class CsvImportService {
         if (mapping.highestColumn() >= columns) {
             return false;
         }
-        ParsedFile parsed = CsvFile.parse(file, mapping, accounts.today());
+        // Only the first rows: the full parse happens once, for the preview.
+        ParsedFile parsed = CsvFile.parseHead(file, mapping, accounts.today(), FIT_ROWS);
         return parsed.rows() > 0 && parsed.refused().size() < parsed.rows();
     }
 
@@ -116,6 +121,37 @@ public class CsvImportService {
     }
 
     /**
+     * What to warn about before this parsed file is imported with this mapping: the same file read with another
+     * mapping than the saved one may be stored a second time, and a file with only positive amounts on a current
+     * account is stored as money coming in. Nothing is stored here.
+     */
+    public ImportCheck check(long accountId, CsvMapping mapping, ParsedFile parsed) {
+        int stored = 0;
+        Optional<CsvMapping> saved = savedMapping(accountId);
+        if (saved.isPresent() && !sameIdentity(saved.get(), mapping) && !parsed.transactions().isEmpty()) {
+            LocalDate first = parsed.transactions().stream().map(DeliveredTransaction::bookingDate).min(LocalDate::compareTo).orElseThrow();
+            LocalDate last = parsed.transactions().stream().map(DeliveredTransaction::bookingDate).max(LocalDate::compareTo).orElseThrow();
+            stored = jdbc.sql("select count(*) from transactions where account_id = ? and booking_date >= ? and booking_date <= ?")
+                    .params(accountId, first.toString(), last.toString())
+                    .query(Integer.class)
+                    .single();
+        }
+        boolean allIncoming = mapping.amount() >= 0 && mapping.debit() < 0 && mapping.credit() < 0
+                && accounts.get(accountId).kind() == Kind.CURRENT
+                && !parsed.transactions().isEmpty()
+                && parsed.transactions().stream().noneMatch(t -> t.amountCents() < 0);
+        return new ImportCheck(stored, allIncoming);
+    }
+
+    /** True when both mappings give a transaction the same identity: the same columns and conventions for what its fingerprint or reference is made of. */
+    private static boolean sameIdentity(CsvMapping a, CsvMapping b) {
+        return a.reference() == b.reference() && a.name() == b.name() && a.iban() == b.iban()
+                && a.description() == b.description() && a.amount() == b.amount() && a.debit() == b.debit()
+                && a.credit() == b.credit() && a.date() == b.date() && a.dateFormat().equals(b.dateFormat())
+                && a.encoding().equals(b.encoding());
+    }
+
+    /**
      * A row whose reference is already stored for the account with another booking date or amount.
      * The store identifies a transaction by its reference, so delivering it would rewrite the earlier one.
      */
@@ -135,9 +171,31 @@ public class CsvImportService {
      * @throws CsvImportException {@code NOT_CSV_ACCOUNT}, {@code MAPPING_INCOMPLETE}
      */
     public ImportReport importFile(long accountId, byte[] file, CsvMapping mapping) {
+        return importFile(accountId, file, mapping, false);
+    }
+
+    /**
+     * As {@link #importFile(long, byte[], CsvMapping)}; {@code confirmed} says the owner saw the warning that the
+     * rows may be stored a second time (see {@link #check}).
+     *
+     * @throws CsvImportException {@code CONFIRMATION_REQUIRED} when that warning applies and {@code confirmed} is false;
+     *         nothing is stored then
+     */
+    public ImportReport importFile(long accountId, byte[] file, CsvMapping mapping, boolean confirmed) {
         importable(accountId);
-        LocalDate today = accounts.today();
-        ParsedFile parsed = CsvFile.parse(file, mapping, today, conflictsIn(accountId));
+        return importParsed(accountId, preview(accountId, file, mapping), mapping, confirmed);
+    }
+
+    /**
+     * Stores what {@link #preview} gave, so a page that has shown the preview reads the file only once.
+     *
+     * @throws CsvImportException {@code CONFIRMATION_REQUIRED}, as for {@link #importFile(long, byte[], CsvMapping, boolean)}
+     */
+    public ImportReport importParsed(long accountId, ParsedFile parsed, CsvMapping mapping, boolean confirmed) {
+        importable(accountId);
+        if (!confirmed && check(accountId, mapping, parsed).needsConfirmation()) {
+            throw new CsvImportException(CsvImportException.Reason.CONFIRMATION_REQUIRED);
+        }
 
         DeliveryReport delivery = new DeliveryReport(0, 0, 0, 0);
         if (!parsed.transactions().isEmpty()) {

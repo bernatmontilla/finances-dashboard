@@ -77,6 +77,11 @@ class CsvImportServiceTest {
         return importing.importFile(csv.id(), bytes, CsvDetector.detect(bytes));
     }
 
+    /** As {@link #importDetected}, with the confirmation a changed mapping on stored rows needs (#37). */
+    private ImportReport importDetectedConfirmed(byte[] bytes) {
+        return importing.importFile(csv.id(), bytes, CsvDetector.detect(bytes), true);
+    }
+
     // ----- shape 1: semicolon, decimal comma, debit and credit columns, Windows-1252
 
     @Test
@@ -441,6 +446,202 @@ class CsvImportServiceTest {
                 .isInstanceOfSatisfying(AccountException.class, e -> assertThat(e.reason()).isEqualTo(AccountException.Reason.INVALID_SOURCE));
     }
 
+    // ----- a changed mapping on data that is already there (#37)
+
+    private ParsedFile previewOf(CsvMapping mapping, byte[] bytes) {
+        return importing.preview(csv.id(), bytes, mapping);
+    }
+
+    @Test
+    void theSameMappingOnTheSameFileGivesNoWarningAndAddsNothing() {
+        byte[] bytes = CsvFixtures.semicolonDebitCredit();
+        CsvMapping saved = CsvDetector.detect(bytes);
+        importing.importFile(csv.id(), bytes, saved);
+        assertThat(stored()).isEqualTo(5);
+
+        ImportCheck check = importing.check(csv.id(), saved, previewOf(saved, bytes));
+
+        assertThat(check.needsConfirmation()).isFalse();
+        assertThat(check.storedInRange()).isZero();
+        ImportReport again = importing.importFile(csv.id(), bytes, saved);
+        assertThat(again.added()).isZero();
+        assertThat(again.known()).isEqualTo(5);
+        assertThat(stored()).isEqualTo(5);
+    }
+
+    @Test
+    void aChangedDescriptionColumnOnStoredRowsWarnsAndIsRefusedWithoutConfirmation() {
+        byte[] bytes = CsvFixtures.semicolonDebitCredit();
+        CsvMapping saved = CsvDetector.detect(bytes);
+        importing.importFile(csv.id(), bytes, saved);
+        CsvMapping changed = saved.toBuilder().description(-1).build();
+
+        ImportCheck check = importing.check(csv.id(), changed, previewOf(changed, bytes));
+
+        assertThat(check.needsConfirmation()).isTrue();
+        assertThat(check.storedInRange()).isEqualTo(5);
+        assertThatThrownBy(() -> importing.importFile(csv.id(), bytes, changed))
+                .isInstanceOfSatisfying(CsvImportException.class,
+                        e -> assertThat(e.reason()).isEqualTo(CsvImportException.Reason.CONFIRMATION_REQUIRED));
+        assertThat(stored()).as("nothing was imported").isEqualTo(5);
+        assertThat(importing.savedMapping(csv.id())).as("the saved mapping is untouched").contains(saved);
+
+        ImportReport confirmed = importing.importFile(csv.id(), bytes, changed, true);
+
+        assertThat(confirmed.added()).as("this is the risk the owner confirmed").isPositive();
+        assertThat(importing.savedMapping(csv.id())).contains(changed);
+    }
+
+    @Test
+    void everyFieldThatFeedsATransactionsIdentityWarnsWhenItChanges() {
+        byte[] bytes = CsvFixtures.semicolonDebitCredit();
+        CsvMapping saved = CsvDetector.detect(bytes);
+        importing.importFile(csv.id(), bytes, saved);
+
+        List<CsvMapping> changes = new java.util.ArrayList<>();
+        for (String field : List.of("name", "iban", "description", "reference")) {
+            CsvMapping.Builder b = saved.toBuilder();
+            switch (field) {
+                case "name" -> b.name = -1;
+                case "iban" -> b.iban = -1;
+                case "description" -> b.description = -1;
+                default -> b.reference = 3; // a reference column that was not there
+            }
+            changes.add(b.build());
+        }
+        CsvMapping.Builder swapped = saved.toBuilder();
+        swapped.debit = saved.credit();
+        swapped.credit = saved.debit();
+        changes.add(swapped.build());
+        CsvMapping.Builder otherDate = saved.toBuilder();
+        otherDate.dateFormat = "MM/dd/yyyy";
+        changes.add(otherDate.build());
+        CsvMapping.Builder otherEncoding = saved.toBuilder();
+        otherEncoding.encoding = CsvMapping.UTF_8;
+        changes.add(otherEncoding.build());
+
+        for (CsvMapping changed : changes) {
+            ParsedFile parsed = previewOf(changed, bytes);
+            if (parsed.transactions().isEmpty()) {
+                continue; // a date format that reads no row stores nothing, so there is nothing to warn about
+            }
+            assertThat(importing.check(csv.id(), changed, parsed).needsConfirmation()).as(changed.toString()).isTrue();
+        }
+        assertThat(changes.stream().filter(c -> !previewOf(c, bytes).transactions().isEmpty()).count()).isGreaterThanOrEqualTo(5);
+    }
+
+    @Test
+    void aSettingThatDoesNotFeedTheIdentityDoesNotWarn() {
+        byte[] bytes = text("Date;Amount;Balance;Description\n03-06-2026;-1,00;90,00;Gym\n04-06-2026;-2,00;88,00;Gym\n");
+        CsvMapping saved = new CsvMapping(';', CsvMapping.UTF_8, true, "dd-MM-yyyy", ',', 0, 1, -1, -1, -1, -1, 3, -1, 2);
+        importing.importFile(csv.id(), bytes, saved);
+        CsvMapping.Builder builder = saved.toBuilder();
+        builder.balance = -1;
+        builder.delimiter = ';';
+        builder.header = true;
+        CsvMapping noBalance = builder.build();
+
+        assertThat(importing.check(csv.id(), noBalance, previewOf(noBalance, bytes)).needsConfirmation()).isFalse();
+    }
+
+    @Test
+    void aChangedMappingOnAFileWhoseRangeHasNothingStoredImportsAsBefore() {
+        byte[] june = text("Date;Amount;Description\n03-06-2026;-1,00;Gym\n04-06-2026;-2,00;Gym\n");
+        CsvMapping saved = new CsvMapping(';', CsvMapping.UTF_8, true, "dd-MM-yyyy", ',', 0, 1, -1, -1, -1, -1, 2, -1, -1);
+        importing.importFile(csv.id(), june, saved);
+        byte[] may = text("Date;Amount;Description\n03-05-2026;-1,00;Gym\n04-05-2026;-2,00;Gym\n");
+        CsvMapping changed = saved.toBuilder().description(-1).build();
+
+        ImportCheck check = importing.check(csv.id(), changed, previewOf(changed, may));
+
+        assertThat(check.needsConfirmation()).isFalse();
+        assertThat(importing.importFile(csv.id(), may, changed).added()).isEqualTo(2);
+    }
+
+    @Test
+    void theFirstImportOfAnAccountHasNoSavedMappingAndNeedsNoConfirmation() {
+        byte[] bytes = CsvFixtures.semicolonDebitCredit();
+        CsvMapping mapping = CsvDetector.detect(bytes);
+
+        assertThat(importing.check(csv.id(), mapping, previewOf(mapping, bytes)).needsConfirmation()).isFalse();
+        assertThat(importing.importFile(csv.id(), bytes, mapping).added()).isEqualTo(5);
+    }
+
+    @Test
+    void theStoredRowsAreCountedOnlyInsideTheRangeOfTheFile() {
+        byte[] bytes = CsvFixtures.semicolonDebitCredit(); // 3 to 5 June: 5 rows
+        CsvMapping saved = CsvDetector.detect(bytes);
+        importing.importFile(csv.id(), bytes, saved);
+        CsvMapping changed = saved.toBuilder().description(-1).build();
+        byte[] narrow = text("Booking date;Counterparty;Counterparty IBAN;Description;Debit;Credit\r\n04-06-2026;Example Energy;NL80SHOP0000000102;Energy June;1.234,56;\r\n");
+
+        ImportCheck check = importing.check(csv.id(), changed, previewOf(changed, narrow));
+
+        assertThat(check.storedInRange()).as("only the one stored row of 4 June").isEqualTo(1);
+    }
+
+    // ----- no negative amounts (#37)
+
+    @Test
+    void aFileWithOnlyPositiveAmountsOnACurrentAccountWarnsThatEverythingIsMoneyComingIn() {
+        byte[] bytes = text("Date;Amount\n01-06-2026;5,00\n02-06-2026;7,50\n");
+        CsvMapping mapping = new CsvMapping(';', CsvMapping.UTF_8, true, "dd-MM-yyyy", ',', 0, 1, -1, -1, -1, -1, -1, -1, -1);
+
+        ImportCheck check = importing.check(csv.id(), mapping, previewOf(mapping, bytes));
+
+        assertThat(check.allIncoming()).isTrue();
+        assertThat(check.needsConfirmation()).as("a warning only, it does not block").isFalse();
+        assertThat(importing.importFile(csv.id(), bytes, mapping).added()).isEqualTo(2);
+    }
+
+    @Test
+    void theSameFileOnASavingsAccountDoesNotWarn() {
+        Account savings = accounts.addCsv("Imported savings", Scope.PRIVATE, Kind.SAVINGS, "NL24XMPL0000000002");
+        byte[] bytes = text("Date;Amount\n01-06-2026;5,00\n02-06-2026;7,50\n");
+        CsvMapping mapping = new CsvMapping(';', CsvMapping.UTF_8, true, "dd-MM-yyyy", ',', 0, 1, -1, -1, -1, -1, -1, -1, -1);
+
+        assertThat(importing.check(savings.id(), mapping, importing.preview(savings.id(), bytes, mapping)).allIncoming()).isFalse();
+    }
+
+    @Test
+    void oneNegativeRowADebitCreditMappingOrNoRowsMeansNoIncomeWarning() {
+        CsvMapping signed = new CsvMapping(';', CsvMapping.UTF_8, true, "dd-MM-yyyy", ',', 0, 1, -1, -1, -1, -1, -1, -1, -1);
+        byte[] mixed = text("Date;Amount\n01-06-2026;5,00\n02-06-2026;-7,50\n");
+        assertThat(importing.check(csv.id(), signed, previewOf(signed, mixed)).allIncoming()).isFalse();
+
+        byte[] debitCredit = text("Date;Debit;Credit\n01-06-2026;;5,00\n02-06-2026;;7,50\n");
+        CsvMapping split = new CsvMapping(';', CsvMapping.UTF_8, true, "dd-MM-yyyy", ',', 0, -1, 1, 2, -1, -1, -1, -1, -1);
+        assertThat(importing.check(csv.id(), split, previewOf(split, debitCredit)).allIncoming()).isFalse();
+
+        byte[] none = text("Date;Amount\n");
+        assertThat(importing.check(csv.id(), signed, previewOf(signed, none)).allIncoming()).isFalse();
+    }
+
+    // ----- the file is read twice only for a head check (#37)
+
+    @Test
+    void whetherASavedMappingFitsReadsOnlyTheFirstRowsOfTheFile() {
+        StringBuilder big = new StringBuilder("Date;Amount\n");
+        for (int i = 0; i < 500; i++) {
+            big.append("03-06-2026;-1,00\n");
+        }
+        CsvMapping mapping = new CsvMapping(';', CsvMapping.UTF_8, true, "dd-MM-yyyy", ',', 0, 1, -1, -1, -1, -1, -1, -1, -1);
+
+        ParsedFile head = CsvFile.parseHead(text(big.toString()), mapping, LocalDate.of(2026, 6, 15), 60);
+
+        assertThat(head.rows()).isEqualTo(60);
+        assertThat(CsvFile.parse(text(big.toString()), mapping, LocalDate.of(2026, 6, 15)).rows()).isEqualTo(500);
+    }
+
+    @Test
+    void aSavedMappingStillFitsAFileWhoseLaterRowsAreBadButItsFirstRowsRead() {
+        byte[] bytes = text("Date;Amount\n03-06-2026;-1,00\n04-06-2026;-2,00\n");
+        CsvMapping mapping = new CsvMapping(';', CsvMapping.UTF_8, true, "dd-MM-yyyy", ',', 0, 1, -1, -1, -1, -1, -1, -1, -1);
+        importing.importFile(csv.id(), bytes, mapping);
+
+        assertThat(importing.propose(csv.id(), bytes)).isEqualTo(mapping);
+    }
+
     // ----- what reaches the log
 
     @Test
@@ -452,10 +653,10 @@ class CsvImportServiceTest {
         root.addAppender(log);
         root.setLevel(Level.DEBUG);
         try {
-            importDetected(file("comma-signed.csv"));
-            importDetected(file("comma-signed.csv"));
-            importDetected(file("two-bad-rows.csv"));
-            importDetected(text("Date;Amount\n31-02-2026;-123,45\n"));
+            importDetectedConfirmed(file("comma-signed.csv"));
+            importDetectedConfirmed(file("comma-signed.csv"));
+            importDetectedConfirmed(file("two-bad-rows.csv"));
+            importDetectedConfirmed(text("Date;Amount\n31-02-2026;-123,45\n"));
         } finally {
             root.detachAppender(log);
             root.setLevel(before);

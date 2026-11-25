@@ -7,6 +7,7 @@ import finances.accounts.BalanceEntry;
 import finances.accounts.BankBalanceInfo;
 import finances.accounts.Kind;
 import finances.accounts.Scope;
+import finances.money.Freshness;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -24,10 +25,28 @@ final class AccountViews {
     private AccountViews() {
     }
 
-    /** A balance as shown. {@code debt}: shown as owed, never as money that is available. */
-    record BalanceView(String amount, String date, String ageKey, long ageDays, String noteKey, String noteArg) {
+    /**
+     * A balance as shown. {@code debt}: shown as owed, never as money that is available. {@code ageKey} is the age in
+     * words and {@code ageArg} its argument: the number of days, or the time of day for "today 07:10".
+     */
+    record BalanceView(String amount, String date, String ageKey, long ageDays, String noteKey, String noteArg, Object ageArg) {
+
+        BalanceView(String amount, String date, String ageKey, long ageDays, String noteKey, String noteArg) {
+            this(amount, date, ageKey, ageDays, noteKey, noteArg, ageDays);
+        }
+
         public boolean hasNote() {
             return noteKey != null;
+        }
+    }
+
+    /**
+     * Why a figure is stale, as message keys. {@code key} takes {@code arg} (a number); a failed sync names its own
+     * reason through {@code detailKey}, which is then the argument of {@code key}.
+     */
+    record StaleView(String key, Long arg, String detailKey) {
+        public boolean hasDetail() {
+            return detailKey != null;
         }
     }
 
@@ -36,7 +55,7 @@ final class AccountViews {
     }
 
     record AccountRow(long id, String name, String scopeKey, String kindKey, String iban, boolean debt,
-            BalanceView balance, DeliveryView delivery) {
+            BalanceView balance, DeliveryView delivery, StaleView stale) {
 
         boolean hasBalance() {
             return balance != null;
@@ -79,24 +98,60 @@ final class AccountViews {
         if (bank == null || !bank.amount().equals(entry.amount()) || !bank.date().equals(entry.date())) {
             return plain;
         }
+        if (bank.basis() == AsOfBasis.BANK_TIME && bank.asOf() != null) {
+            plain = withTime(plain, bank.asOf(), today, zone);
+        }
         if (!bank.booked()) {
-            return new BalanceView(plain.amount(), plain.date(), plain.ageKey(), plain.ageDays(), "bank.balance.note.other", bank.type());
+            return new BalanceView(plain.amount(), plain.date(), plain.ageKey(), plain.ageDays(), "bank.balance.note.other", bank.type(), plain.ageArg());
         }
         if (bank.basis() == AsOfBasis.FETCHED) {
             return new BalanceView(plain.amount(), plain.date(), plain.ageKey(), plain.ageDays(), "bank.balance.note.fetched",
-                    BankViews.moment(bank.asOf(), zone));
+                    BankViews.moment(bank.asOf(), zone), plain.ageArg());
         }
         return plain;
     }
 
+    /** The bank's own timestamp shows as "today 07:10": the age in words carries the time of day. */
+    private static BalanceView withTime(BalanceView plain, Instant asOf, LocalDate today, ZoneId zone) {
+        java.time.LocalDateTime moment = java.time.LocalDateTime.ofInstant(asOf, zone);
+        long days = Math.max(0, ChronoUnit.DAYS.between(moment.toLocalDate(), today));
+        if (days > 1) {
+            return new BalanceView(plain.amount(), moment.toLocalDate().toString(), "age.days", days, null, null, days);
+        }
+        String time = BankViews.time(asOf, zone);
+        return new BalanceView(plain.amount(), moment.toLocalDate().toString(), days == 0 ? "age.todayAt" : "age.yesterdayAt", days,
+                null, null, time);
+    }
+
+    /** The reason as message keys and a number; the templates hold no text. */
+    static StaleView stale(Freshness.Stale stale) {
+        if (stale == null) {
+            return null;
+        }
+        return switch (stale.reason()) {
+            case CONSENT_EXPIRED -> new StaleView("stale.reason.consent_expired", null, null);
+            case SYNC_FAILED -> new StaleView("stale.reason.sync_failed", null,
+                    "bank.reason." + (stale.detail() == null ? "unexpected" : stale.detail()));
+            case SYNC_OLD -> stale.age().toHours() >= 48
+                    ? new StaleView("stale.reason.sync_old.days", stale.age().toDays(), null)
+                    : new StaleView("stale.reason.sync_old.hours", stale.age().toHours(), null);
+            case NOT_UPDATED -> new StaleView("stale.reason.not_updated", stale.age().toDays(), null);
+        };
+    }
+
     static AccountRow row(AccountSummary summary, LocalDate today, Map<Long, Instant> delivered, ZoneId zone,
             Map<Long, BankBalanceInfo> banks) {
+        return row(summary, today, delivered, zone, banks, Map.of());
+    }
+
+    static AccountRow row(AccountSummary summary, LocalDate today, Map<Long, Instant> delivered, ZoneId zone,
+            Map<Long, BankBalanceInfo> banks, Map<Long, Freshness.Stale> stale) {
         Account account = summary.account();
         Instant at = delivered.get(account.id());
         BankBalanceInfo bank = banks.get(account.id());
         return new AccountRow(account.id(), account.name(), scopeKey(account.scope()), kindKey(account.kind()),
                 account.iban(), account.kind() == Kind.DEBT, summary.latest().map(e -> balance(e, today, bank, zone)).orElse(null),
-                at == null ? null : delivery(at, zone, today));
+                at == null ? null : delivery(at, zone, today), stale(stale.get(account.id())));
     }
 
     /** One group per scope that has accounts, in the order of the list given (already sorted). */
@@ -110,11 +165,16 @@ final class AccountViews {
 
     static List<Group> groups(List<AccountSummary> summaries, LocalDate today, Map<Long, Instant> delivered, ZoneId zone,
             Map<Long, BankBalanceInfo> banks) {
+        return groups(summaries, today, delivered, zone, banks, Map.of());
+    }
+
+    static List<Group> groups(List<AccountSummary> summaries, LocalDate today, Map<Long, Instant> delivered, ZoneId zone,
+            Map<Long, BankBalanceInfo> banks, Map<Long, Freshness.Stale> stale) {
         List<Group> groups = new ArrayList<>();
         for (Scope scope : Scope.values()) {
             List<AccountRow> rows = summaries.stream()
                     .filter(s -> s.account().scope() == scope)
-                    .map(s -> row(s, today, delivered, zone, banks))
+                    .map(s -> row(s, today, delivered, zone, banks, stale))
                     .toList();
             if (!rows.isEmpty()) {
                 groups.add(new Group(scopeKey(scope), rows));

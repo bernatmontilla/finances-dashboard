@@ -20,10 +20,17 @@
       <strong th:if="${!debt}" class="amount" th:text="${view.amount}"></strong>
       <strong th:if="${debt}" class="amount owed" th:text="#{balance.owed(${view.amount})}"></strong>
       <span class="muted" th:text="#{balance.asOf(${view.date})}"></span>
-      <span class="muted" th:text="#{${view.ageKey}(${view.ageDays})}"></span>
+      <span class="muted" th:text="#{${view.ageKey}(${view.ageArg})}"></span>
       <span th:if="${view.hasNote()}" class="muted" th:text="#{${view.noteKey}(${view.noteArg})}"></span>
     </span>
   </span>
+
+  <!-- A stale figure is marked by a word and a sign, never by colour alone; the reason opens on tap or hover. -->
+  <details th:fragment="stale(view)" th:if="${view != null}" class="stale">
+    <summary th:text="#{stale.mark}"></summary>
+    <span th:if="${!view.hasDetail()}" th:text="#{${view.key}(${view.arg})}"></span>
+    <span th:if="${view.hasDetail()}" th:text="#{${view.key}(#{${view.detailKey}})}"></span>
+  </details>
 
   <span th:fragment="delivered(view)" class="muted delivered">
     <span th:if="${view == null}" th:text="#{transactions.neverDelivered}"></span>

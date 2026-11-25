@@ -20,6 +20,7 @@
           <a th:href="@{/accounts/{id}(id=${row.id})}" th:text="${row.name}"></a>
           <span class="muted" th:text="#{${row.kindKey}}"></span>
           <span th:replace="~{fragments :: balance(${row.balance}, ${row.debt})}"></span>
+          <th:block th:replace="~{fragments :: stale(${row.stale})}"></th:block>
           <span th:replace="~{fragments :: delivered(${row.delivery})}"></span>
         </li>
       </ul>

@@ -21,6 +21,7 @@ import java.util.Map;
 final class BankViews {
 
     private static final DateTimeFormatter MOMENT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm");
     private static final int RUNS_SHOWN = 20;
 
     private BankViews() {
@@ -111,6 +112,11 @@ final class BankViews {
             case NOT_CONFIGURED -> "bank.sync.notConfigured";
             case DONE -> summary.failed() > 0 ? "bank.sync.failed" : summary.ok() == 0 ? "bank.sync.nothing" : "bank.sync.done";
         };
+    }
+
+    /** The time of day in the owner's zone, for "today 07:10". */
+    static String time(Instant instant, ZoneId zone) {
+        return LocalDateTime.ofInstant(instant, zone).format(TIME);
     }
 
     static String moment(Instant instant, ZoneId zone) {

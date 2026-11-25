@@ -66,6 +66,11 @@ public class SessionFiles {
         }
     }
 
+    /** Whether the consent's session file is there, without reading the secret in it. */
+    boolean exists(long consentId) {
+        return Files.isRegularFile(fileOf(consentId));
+    }
+
     void delete(long consentId) {
         try {
             Files.deleteIfExists(fileOf(consentId));

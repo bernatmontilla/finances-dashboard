@@ -31,8 +31,10 @@ jobs:
     runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v7
-      # TODO: set up the toolchain if the runner lacks it, for example
-      # - uses: actions/setup-java@v5
-      #   with: { distribution: temurin, java-version: '25' }
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
       - name: Build and test
         run: bash scripts/dev/build.sh

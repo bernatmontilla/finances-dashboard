@@ -44,3 +44,27 @@
   installed `update.sh` does not exist in the sandbox.
 - **Known limit**: as in `arch-deploy.md`, the checksum protects against a broken download, not a
   compromised repository.
+
+## Hardening after the review in CI (issue #27)
+
+The review of PR 26 found ways to end on a failed service or on a silent "never updates". Changes,
+all inside `deploy/update.sh`, `scripts/dev/test-update.sh` and `docs/install.md`; the asset names,
+the folder layout and the existing exit codes are unchanged.
+
+- **Crash loop**: `restart()` runs `systemctl --user reset-failed` first (failure ignored), so
+  systemd's start limit cannot refuse the rollback's restart.
+- **Cut-off run**: with `pending-version` left behind the next run first probes the health once. If
+  the pending version is not reporting it restarts the service once, then waits as before. A
+  pending version that never reports is rolled back only when the jar differs from `previous.jar`
+  (`cmp -s`); if they are the same file the swap never happened, so the marker is dropped, no
+  `failed-version` is written, and the run goes on with a normal update. The probe before the
+  restart (not in the spec's wording) keeps a service that already runs the pending version from
+  being restarted for nothing, and the existing "pending healthy: no restart" case unchanged.
+- **Missing tool**: `flock`, `curl` and `sha256sum` are checked up front, exit 1 naming the missing
+  one; `cmp` is checked too since the cut-off case depends on it. This is a new exit 1.
+- **Manual rollback** in `docs/install.md` copies to a temporary file in `app/` and `mv -f`s it over,
+  so the jar the JVM has open is replaced, not overwritten.
+- **Test-only switches**: `FINANCES_CURL_PROTO`, `FINANCES_UID` and `FINANCES_SYSTEMCTL` are read
+  only when `FINANCES_TEST=1`, which `scripts/dev/test-update.sh` sets; otherwise each one that is
+  set is named in a log line as ignored. This replaces the sentence above about `FINANCES_UID`.
+

@@ -14,7 +14,9 @@ service, and 8080 is an example port. Nothing here is specific to any installati
 - **systemd** with the user manager running, and **lingering** switched on for the user so the
   service starts at boot and keeps running when nobody is logged in:
   `loginctl enable-linger "$USER"` (once, as that user or with `sudo`).
-- `curl`, `sha256sum` and `flock` (util-linux): all present on a normal Debian or Ubuntu system.
+- `curl`, `sha256sum`, `cmp` and `flock` (util-linux): all present on a normal Debian or Ubuntu
+  system. `update.sh` checks for them first and exits 1, naming the missing one, so a machine
+  without one shows a failed update unit instead of silently never updating.
 - A normal user. Nothing here, and nothing in the update, runs as root.
 
 ## First install
@@ -105,7 +107,10 @@ the checksum, keeps the current jar as `previous.jar`, swaps, restarts the servi
 migrations) until it reports the new version. Only then is the new version recorded as installed.
 If it does not report in time, the previous jar is put back and the service restarted; the run is
 reported as failed, and that release is not tried again until a newer one appears. If a run is cut
-off between the swap and the check (power cut, reboot), the next run settles it the same way.
+off between the swap and the check (power cut, reboot), the next run restarts the service once and
+settles it the same way; a run cut off before the swap is not treated as a failed release. Every
+restart is preceded by `systemctl --user reset-failed`, so systemd's start limit after a crash loop
+cannot block the rollback.
 
 Nothing changes, and the run ends quietly, when there is no network, GitHub is unreachable or
 rate-limited (the timer tries again next day), when the download is partial, and when the
@@ -131,10 +136,14 @@ hand, for an update that started fine but that you do not want:
 
 ```bash
 systemctl --user stop finances-dashboard-update.timer
-cp ~/finances-dashboard/app/previous.jar ~/finances-dashboard/app/finances-dashboard.jar
+cp ~/finances-dashboard/app/previous.jar ~/finances-dashboard/app/.rollback.jar
+mv -f ~/finances-dashboard/app/.rollback.jar ~/finances-dashboard/app/finances-dashboard.jar
 cp ~/finances-dashboard/app/previous-version ~/finances-dashboard/app/installed-version
 systemctl --user restart finances-dashboard.service
 ```
+
+The jar is copied to a temporary file first and moved over with `mv -f`: copying straight over
+`finances-dashboard.jar` would overwrite the file the running service has open.
 
 Leave the timer off until a newer release exists, or the next run installs the same version again
 (an automatic rollback remembers the failed release; a manual one does not). A database migration is never undone: if the new version changed the data, restore a backup made

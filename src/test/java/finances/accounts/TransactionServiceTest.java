@@ -460,6 +460,184 @@ class TransactionServiceTest {
         assertThat(log.list).as("the log was captured").isNotEmpty();
     }
 
+    // ----- a pending transaction that is booked under a new reference (issue #10)
+
+    private static DeliveredTransaction pendingWithReference(LocalDate date, long cents, String counterparty, String description, String reference) {
+        return new DeliveredTransaction(date, null, cents, "EUR", counterparty, SHOP_IBAN, description,
+                TransactionStatus.PENDING, reference, "raw:pending:" + reference);
+    }
+
+    private DeliveryReport deliverBank(DeliveredTransaction... batch) {
+        return transactions.deliver(everyday.id(), Source.BANK, List.of(batch));
+    }
+
+    @Test
+    void aPendingRowDeliveredAgainInTheSameBatchIsNotTakenOverByAnIdenticalSecondPurchase() {
+        // The store has pending R1; the batch is [pending R1, booked B9], B9 being an identical second purchase.
+        deliverBank(pendingWithReference(DAY, -800, "Example Gym", "Day pass", "R1"));
+
+        DeliveryReport report = deliverBank(
+                pendingWithReference(DAY, -800, "Example Gym", "Day pass", "R1"),
+                booked(DAY, -800, "Example Gym", "Day pass", "B9"));
+
+        assertThat(report).isEqualTo(new DeliveryReport(1, 0, 1, 0));
+        assertThat(stored()).hasSize(2).extracting(Transaction::reference).containsExactlyInAnyOrder("R1", "B9");
+    }
+
+    @Test
+    void theSameTwoPurchasesInTheOtherOrderOfTheBatchAlsoStayTwoRows() {
+        deliverBank(pendingWithReference(DAY, -800, "Example Gym", "Day pass", "R1"));
+
+        deliverBank(
+                booked(DAY, -800, "Example Gym", "Day pass", "B9"),
+                pendingWithReference(DAY, -800, "Example Gym", "Day pass", "R1"));
+
+        assertThat(stored()).hasSize(2);
+        assertThat(stored()).extracting(Transaction::status).containsExactlyInAnyOrder(TransactionStatus.BOOKED, TransactionStatus.PENDING);
+    }
+
+    @Test
+    void aPendingRowIsBookedUnderAnotherDateAndKeepsItsIdentityAndNote() {
+        deliverBank(pending(DAY, -800, "Example Gym", "Day pass"));
+        long id = stored().getFirst().id();
+        transactions.setNote(id, "With Alex Sample");
+
+        DeliveryReport report = deliverBank(booked(DAY.plusDays(2), -800, "Example Gym", "Day pass", "B9"));
+
+        assertThat(report).isEqualTo(new DeliveryReport(0, 1, 0, 0));
+        assertThat(stored()).singleElement().satisfies(t -> {
+            assertThat(t.id()).isEqualTo(id);
+            assertThat(t.status()).isEqualTo(TransactionStatus.BOOKED);
+            assertThat(t.bookingDate()).isEqualTo(DAY.plusDays(2));
+            assertThat(t.note()).isEqualTo("With Alex Sample");
+        });
+        // Delivering the booked one again changes nothing.
+        assertThat(deliverBank(booked(DAY.plusDays(2), -800, "Example Gym", "Day pass", "B9"))).isEqualTo(new DeliveryReport(0, 0, 1, 0));
+        assertThat(count()).isEqualTo(1);
+    }
+
+    @Test
+    void theTakeoverReachesBackExactlyTheNamedNumberOfDays() {
+        assertThat(TransactionService.PENDING_TAKEOVER_DAYS).isEqualTo(7);
+        LocalDate booking = DAY.plusDays(TransactionService.PENDING_TAKEOVER_DAYS);
+
+        // Dated exactly the limit earlier: the same purchase.
+        deliverBank(pending(DAY, -800, "Example Gym", "Day pass"));
+        assertThat(deliverBank(booked(booking, -800, "Example Gym", "Day pass", "B1"))).isEqualTo(new DeliveryReport(0, 1, 0, 0));
+        assertThat(count()).isEqualTo(1);
+
+        // One day further back than the limit: another purchase.
+        deliverBank(pending(DAY.minusDays(1), -900, "Example Gym", "Day pass"));
+        assertThat(deliverBank(booked(booking, -900, "Example Gym", "Day pass", "B2"))).isEqualTo(new DeliveryReport(1, 0, 0, 0));
+        assertThat(count()).isEqualTo(3);
+    }
+
+    @Test
+    void aPendingRowDatedAfterTheBookingDateIsAnotherPurchase() {
+        deliverBank(pending(DAY.plusDays(1), -800, "Example Gym", "Day pass"));
+
+        assertThat(deliverBank(booked(DAY, -800, "Example Gym", "Day pass", "B1"))).isEqualTo(new DeliveryReport(1, 0, 0, 0));
+        assertThat(count()).isEqualTo(2);
+    }
+
+    @Test
+    void aBookedTransactionTakesOverOnlyAPendingRowWithTheSameAmountCounterpartyAndDescription() {
+        deliverBank(pending(DAY, -800, "Example Gym", "Day pass"));
+
+        assertThat(deliverBank(booked(DAY, -801, "Example Gym", "Day pass", "B1")).added()).isEqualTo(1);
+        assertThat(deliverBank(booked(DAY, -800, "Example Telecom", "Day pass", "B2")).added()).isEqualTo(1);
+        assertThat(deliverBank(booked(DAY, -800, "Example Gym", "Month pass", "B3")).added()).isEqualTo(1);
+
+        assertThat(stored()).filteredOn(Transaction::pending).hasSize(1);
+        assertThat(count()).isEqualTo(4);
+    }
+
+    @Test
+    void theOldestPendingRowIsTakenOverFirst() {
+        deliverBank(pending(DAY, -800, "Example Gym", "Day pass"), pending(DAY.plusDays(1), -800, "Example Gym", "Day pass"));
+
+        deliverBank(booked(DAY.plusDays(3), -800, "Example Gym", "Day pass", "B1"));
+
+        assertThat(stored()).filteredOn(Transaction::pending).singleElement()
+                .satisfies(t -> assertThat(t.bookingDate()).isEqualTo(DAY.plusDays(1)));
+    }
+
+    // ----- pending rows the bank no longer reports (issue #10)
+
+    private BankDeliveryReport fromBank(LocalDate coveredFrom, DeliveredTransaction... batch) {
+        return transactions.deliverFromBank(everyday.id(), List.of(batch), coveredFrom);
+    }
+
+    @Test
+    void aPendingRowTheBankNoLongerReportsIsRemovedWhenItHasNoNote() {
+        deliverBank(pending(DAY, -800, "Example Gym", "Day pass"), booked(DAY, -1234, "Corner Grocery", "Groceries", "REF-1"));
+
+        BankDeliveryReport report = fromBank(DAY.minusDays(5), booked(DAY, -1234, "Corner Grocery", "Groceries", "REF-1"));
+
+        assertThat(report.pendingRemoved()).isEqualTo(1);
+        assertThat(report.pendingKept()).isZero();
+        assertThat(report.delivered()).isEqualTo(new DeliveryReport(0, 0, 1, 0));
+        assertThat(stored()).singleElement().satisfies(t -> assertThat(t.reference()).isEqualTo("REF-1"));
+    }
+
+    @Test
+    void aPendingRowWithANoteIsKeptAndMarkedAndTheMarkGoesWhenTheBankReportsItAgain() {
+        deliverBank(pending(DAY, -800, "Example Gym", "Day pass"));
+        transactions.setNote(stored().getFirst().id(), "With Alex Sample");
+
+        BankDeliveryReport report = fromBank(DAY.minusDays(5));
+
+        assertThat(report.pendingRemoved()).isZero();
+        assertThat(report.pendingKept()).isEqualTo(1);
+        assertThat(stored()).singleElement().satisfies(t -> {
+            assertThat(t.noLongerReported()).isTrue();
+            assertThat(t.note()).isEqualTo("With Alex Sample");
+        });
+
+        fromBank(DAY.minusDays(5), pending(DAY, -800, "Example Gym", "Day pass"));
+
+        assertThat(stored()).singleElement().satisfies(t -> assertThat(t.noLongerReported()).isFalse());
+    }
+
+    @Test
+    void aPendingRowThatBecameBookedInThisFetchIsNotCountedAsNoLongerReported() {
+        deliverBank(pending(DAY, -800, "Example Gym", "Day pass"));
+        transactions.setNote(stored().getFirst().id(), "With Alex Sample");
+
+        BankDeliveryReport report = fromBank(DAY.minusDays(5), booked(DAY.plusDays(1), -800, "Example Gym", "Day pass", "B1"));
+
+        assertThat(report.pendingRemoved()).isZero();
+        assertThat(report.pendingKept()).isZero();
+        assertThat(stored()).singleElement().satisfies(t -> {
+            assertThat(t.status()).isEqualTo(TransactionStatus.BOOKED);
+            assertThat(t.noLongerReported()).isFalse();
+        });
+    }
+
+    @Test
+    void onlyPendingRowsInsideTheCoveredPeriodAndOfSourceBankAreTouched() {
+        deliverBank(pending(DAY.minusDays(30), -100, "Example Gym", "Old"));
+        transactions.deliver(everyday.id(), Source.CSV, List.of(pending(DAY, -200, "Example Gym", "From a file")));
+
+        BankDeliveryReport report = fromBank(DAY.minusDays(5));
+
+        assertThat(report.pendingRemoved()).isZero();
+        assertThat(count()).isEqualTo(2);
+
+        // A fetch that reached back as far as the bank allows covers every pending row of the bank.
+        assertThat(fromBank(null).pendingRemoved()).isEqualTo(1);
+        assertThat(stored()).singleElement().satisfies(t -> assertThat(t.source()).isEqualTo(Source.CSV));
+    }
+
+    @Test
+    void theDeliveryEntryPointNeverDeletesAnything() {
+        deliverBank(pending(DAY, -800, "Example Gym", "Day pass"));
+
+        deliverBank(booked(DAY, -1234, "Corner Grocery", "Groceries", "REF-1"));
+
+        assertThat(stored()).hasSize(2);
+    }
+
     /** A clock the test can move: the store stamps what it sees with it. */
     private static final class MovableClock extends Clock {
         private Instant now;

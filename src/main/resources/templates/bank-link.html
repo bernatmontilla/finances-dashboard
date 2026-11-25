@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title th:text="#{bank.link.title}"></title>
+  <link rel="stylesheet" th:href="@{/app.css}">
+</head>
+<body>
+  <main>
+    <nav th:replace="~{fragments :: nav}"></nav>
+    <h1 th:text="#{bank.link.title}"></h1>
+    <p th:replace="~{fragments :: error}"></p>
+    <p class="notice" th:text="#{bank.link.terms}"></p>
+    <p class="muted" th:text="#{bank.link.readOnly}"></p>
+
+    <th:block th:if="${country == null and countries != null}">
+      <h2 th:text="#{bank.link.country}"></h2>
+      <ul class="list">
+        <li th:each="option : ${countries}">
+          <a th:href="@{/settings/bank/link(country=${option.code})}" th:text="${option.name}"></a>
+        </li>
+      </ul>
+    </th:block>
+
+    <th:block th:if="${country != null and banks != null}">
+      <h2 th:text="${countryName}"></h2>
+      <p th:if="${banks.empty}" th:text="#{bank.link.noBanks}"></p>
+      <form th:unless="${banks.empty}" method="post" th:action="@{/settings/bank/link}">
+        <input type="hidden" name="country" th:value="${country}">
+        <p>
+          <label for="bank" th:text="#{bank.link.bank}"></label>
+          <select id="bank" name="bank">
+            <option th:each="bank : ${banks}" th:value="${bank.name}" th:text="${bank.name}"></option>
+          </select>
+        </p>
+        <p class="muted" th:text="#{bank.link.afterwards}"></p>
+        <p class="actions">
+          <button type="submit" th:text="#{bank.link.continue}"></button>
+          <a th:href="@{/settings/bank/link}" th:text="#{bank.link.otherCountry}"></a>
+        </p>
+      </form>
+    </th:block>
+    <p><a th:href="@{/settings}" th:text="#{bank.back}"></a></p>
+  </main>
+</body>
+</html>

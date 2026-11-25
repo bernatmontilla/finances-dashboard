@@ -13,6 +13,13 @@
     <h1 th:text="#{app.name}"></h1>
     <p class="muted" th:text="#{overview.version(${version})}"></p>
     <h2 th:text="#{overview.title}"></h2>
+    <p th:if="${syncKey != null}" class="notice" role="status" th:text="#{${syncKey}(${syncOk}, ${syncFailed})}"></p>
+    <form th:if="${canSync}" method="post" th:action="@{/sync}">
+      <p class="actions">
+        <button type="submit" class="secondary" th:text="#{bank.syncNow}"></button>
+        <span class="muted" th:text="#{bank.syncNow.hint}"></span>
+      </p>
+    </form>
     <th:block th:if="${groups.empty}">
       <p th:text="#{overview.noAccounts}"></p>
       <p><a class="button" th:href="@{/accounts/new}" th:text="#{overview.addAccount}"></a></p>

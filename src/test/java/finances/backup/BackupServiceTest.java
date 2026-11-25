@@ -113,7 +113,7 @@ class BackupServiceTest {
             assertThat(zip.stream().map(ZipEntry::getName).toList()).containsExactly("manifest.properties", "finances.db");
             String manifest = new String(zip.getInputStream(zip.getEntry("manifest.properties")).readAllBytes(), StandardCharsets.UTF_8);
             assertThat(manifest).contains("format=finances-backup").contains("formatVersion=1").contains("applicationVersion=1.2.3")
-                    .contains("schemaVersion=4").contains("createdAt=2026-06-15T10\\:00\\:00Z").contains("databaseSha256=");
+                    .contains("schemaVersion=5").contains("createdAt=2026-06-15T10\\:00\\:00Z").contains("databaseSha256=");
         }
         assertThat(new String(Files.readAllBytes(file), StandardCharsets.ISO_8859_1)).as("no secret in the file").doesNotContain("not-a-real-key");
         assertNothingStaged(folder);

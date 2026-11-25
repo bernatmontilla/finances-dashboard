@@ -14,7 +14,7 @@ final class TransactionViews {
     }
 
     record Row(long id, long accountId, String accountName, String date, String counterparty, String description,
-            String amount, boolean pending, String note) {
+            String amount, boolean pending, boolean noLongerReported, String note) {
 
         public boolean hasCounterparty() {
             return counterparty != null;
@@ -47,7 +47,7 @@ final class TransactionViews {
 
     static Row row(Transaction t) {
         return new Row(t.id(), t.accountId(), t.accountName(), t.bookingDate().toString(), t.counterpartyName(),
-                t.description(), t.amount().format(), t.pending(), t.note());
+                t.description(), t.amount().format(), t.pending(), t.noLongerReported(), t.note());
     }
 
     static PageView page(TransactionPage page) {

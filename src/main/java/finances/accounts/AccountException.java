@@ -19,7 +19,8 @@ public class AccountException extends RuntimeException {
         INVALID_SOURCE,
         ARCHIVED,
         DEBT_NEGATIVE,
-        KIND_CHANGE_HAS_BALANCES
+        KIND_CHANGE_HAS_BALANCES,
+        ALREADY_BANK
     }
 
     private final Reason reason;

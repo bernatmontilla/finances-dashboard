@@ -9,6 +9,7 @@ import java.time.LocalDate;
  * ({@code null} when there is none). The raw record is not part of it, so a page stays small;
  * {@link TransactionService#raw} reads it.
  *
+ * @param noLongerReported a pending transaction the bank stopped reporting, kept because it has a note of the owner
  * @param accountName the name of its account, for pages that list several accounts
  */
 public record Transaction(
@@ -26,6 +27,7 @@ public record Transaction(
         String reference,
         Instant firstSeenAt,
         Instant lastSeenAt,
+        boolean noLongerReported,
         String note) {
 
     public boolean pending() {

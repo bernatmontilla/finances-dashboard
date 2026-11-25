@@ -9,6 +9,7 @@ import finances.accounts.Scope;
 import finances.accounts.Source;
 import finances.accounts.TransactionService;
 import finances.money.AmountFormatException;
+import finances.sync.BankStatus;
 import finances.money.Money;
 import jakarta.servlet.http.HttpServletResponse;
 import java.time.Instant;
@@ -40,10 +41,12 @@ class AccountsController {
 
     private final AccountService accounts;
     private final TransactionService transactions;
+    private final BankStatus bank;
 
-    AccountsController(AccountService accounts, TransactionService transactions) {
+    AccountsController(AccountService accounts, TransactionService transactions, BankStatus bank) {
         this.accounts = accounts;
         this.transactions = transactions;
+        this.bank = bank;
     }
 
     // ----- the list
@@ -197,6 +200,10 @@ class AccountsController {
         model.addAttribute("history", accounts.history(account.id()).stream()
                 .map(e -> new AccountViews.EntryRow(e.id(), AccountViews.balance(e, today)))
                 .toList());
+        model.addAttribute("bank", account.source() != Source.BANK ? null : bank.consentOfAccount(account.id())
+                .map(consent -> BankViews.account(consent, accounts.latestBankBalance(account.id()).orElse(null),
+                        bank.lastRun(account.id()).orElse(null), transactions.zone()))
+                .orElse(null));
         model.addAttribute("amount", amount);
         model.addAttribute("date", date.isEmpty() ? today.toString() : date);
         model.addAttribute("today", today.toString());

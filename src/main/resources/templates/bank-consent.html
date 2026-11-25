@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title th:text="#{bank.consent.title}"></title>
+  <link rel="stylesheet" th:href="@{/app.css}">
+</head>
+<body>
+  <main>
+    <nav th:replace="~{fragments :: nav}"></nav>
+    <h1 th:text="${consent.bankName}"></h1>
+    <p th:replace="~{fragments :: error}"></p>
+    <p th:if="${syncKey != null}" class="notice" role="status" th:text="#{${syncKey}}"></p>
+    <p th:if="${reattached gt 0}" class="notice" role="status" th:text="#{bank.consent.reattached(${reattached})}"></p>
+
+    <p th:if="${!consent.ended()}" th:text="#{bank.consent.validUntil(${validUntil})}"></p>
+    <th:block th:if="${consent.ended()}">
+      <p class="notice warning" th:text="#{bank.consent.expired(${validUntil})}"></p>
+      <form method="post" th:action="@{/settings/bank/consents/{id}/renew(id=${consent.id})}">
+        <p class="actions"><button type="submit" th:text="#{bank.renew}"></button></p>
+      </form>
+    </th:block>
+
+    <h2 th:text="#{bank.consent.linked}"></h2>
+    <p th:if="${linked.empty}" class="muted" th:text="#{bank.consent.noneLinked}"></p>
+    <ul class="list" th:unless="${linked.empty}">
+      <li th:each="row : ${linked}">
+        <a th:href="@{/accounts/{id}(id=${row.accountId})}" th:text="${row.name}"></a>
+        <span class="muted" th:if="${row.iban != null}" th:text="${row.iban}"></span>
+      </li>
+    </ul>
+
+    <th:block th:unless="${offered.empty}">
+      <h2 th:text="#{bank.consent.offered}"></h2>
+      <p th:text="#{bank.consent.offeredIntro}"></p>
+      <section th:each="row : ${offered}" class="offer">
+        <p><strong th:text="${row.suggestedName}"></strong> <span class="muted" th:if="${row.hasIban}" th:text="${row.iban}"></span></p>
+        <form method="post" th:action="@{/settings/bank/consents/{id}/accounts/{link}/create(id=${consent.id}, link=${row.id})}">
+          <h3 th:text="#{bank.offer.create}"></h3>
+          <p>
+            <label th:for="'name-' + ${row.id}" th:text="#{account.field.name}"></label>
+            <input th:id="'name-' + ${row.id}" name="name" type="text" maxlength="100" required th:value="${row.suggestedName}">
+          </p>
+          <p>
+            <label th:for="'scope-' + ${row.id}" th:text="#{account.field.scope}"></label>
+            <select th:id="'scope-' + ${row.id}" name="scope">
+              <option th:each="code : ${scopes}" th:value="${code}" th:text="#{'scope.' + ${code}}"></option>
+            </select>
+          </p>
+          <p>
+            <label th:for="'kind-' + ${row.id}" th:text="#{account.field.kind}"></label>
+            <select th:id="'kind-' + ${row.id}" name="kind">
+              <option th:each="code : ${kinds}" th:value="${code}" th:selected="${code == row.kind}" th:text="#{'kind.' + ${code}}"></option>
+            </select>
+          </p>
+          <p class="actions"><button type="submit" th:text="#{bank.offer.createButton}"></button></p>
+        </form>
+        <form method="post" th:if="${!attachable.empty}" th:action="@{/settings/bank/consents/{id}/accounts/{link}/attach(id=${consent.id}, link=${row.id})}">
+          <h3 th:text="#{bank.offer.attach}"></h3>
+          <p class="muted" th:text="#{bank.offer.attachHint}"></p>
+          <p>
+            <label th:for="'account-' + ${row.id}" th:text="#{bank.offer.attachTo}"></label>
+            <select th:id="'account-' + ${row.id}" name="account">
+              <option th:each="candidate : ${attachable}" th:value="${candidate.id}"
+                      th:selected="${row.hasIban and candidate.iban == row.iban}" th:text="${candidate.name}"></option>
+            </select>
+          </p>
+          <p class="actions"><button type="submit" class="secondary" th:text="#{bank.offer.attachButton}"></button></p>
+        </form>
+      </section>
+    </th:block>
+
+    <th:block th:unless="${unsupported.empty}">
+      <h2 th:text="#{bank.consent.unsupported}"></h2>
+      <ul class="list">
+        <li th:each="row : ${unsupported}">
+          <span th:text="#{bank.consent.unsupportedRow(${row.details == null ? '' : row.details}, ${row.currency})}"></span>
+        </li>
+      </ul>
+    </th:block>
+
+    <h2 th:text="#{bank.unlink.title}"></h2>
+    <p th:text="#{bank.unlink.intro}"></p>
+    <form method="post" th:action="@{/settings/bank/consents/{id}/unlink(id=${consent.id})}">
+      <p class="actions"><button type="submit" class="danger" th:text="#{bank.unlink}"></button></p>
+    </form>
+    <p><a th:href="@{/settings}" th:text="#{bank.back}"></a></p>
+  </main>
+</body>
+</html>

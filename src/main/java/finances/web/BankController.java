@@ -140,7 +140,7 @@ class BankController {
         model.addAttribute("scopes", SCOPE_CODES);
         model.addAttribute("kinds", KIND_CODES);
         model.addAttribute("reattached", reattached);
-        model.addAttribute("syncKey", syncState == null ? null : "bank.sync." + (syncState.equals("failed") ? "failed" : syncState.equals("busy") ? "busy" : "done"));
+        model.addAttribute("syncKey", syncState == null ? null : "bank.consent.sync." + (syncState.equals("failed") ? "failed" : syncState.equals("busy") ? "busy" : "done"));
         model.addAttribute("error", error);
         return "bank-consent";
     }

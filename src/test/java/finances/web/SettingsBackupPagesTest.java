@@ -156,8 +156,8 @@ class SettingsBackupPagesTest {
 
         String confirm = get(confirmPath).body();
         assertThat(confirm).contains("Restore from a backup").contains("Backup format 1, database version 3")
-                .contains("The backup holds 1 accounts, 0 balances and 3,000 transactions")
-                .contains("The application now holds 2 accounts, 0 balances and 3,000 transactions").contains("Type RESTORE to confirm");
+                .contains("The backup holds: accounts 1, balances 0, transactions 3,000")
+                .contains("The application now holds: accounts 2, balances 0, transactions 3,000").contains("Type RESTORE to confirm");
         assertThat(confirm).doesNotContain("Corner Grocery").doesNotContain("NL51XMPL");
 
         HttpResponse<String> wrong = post(confirmPath, Map.of("confirm", "yes please"));

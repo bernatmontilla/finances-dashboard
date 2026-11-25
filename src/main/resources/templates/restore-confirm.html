@@ -25,7 +25,7 @@
       <li th:text="#{restore.contents.backup(${plan.backup.accounts}, ${plan.backup.balances}, ${plan.backup.transactions})}"></li>
       <li th:text="#{restore.contents.current(${plan.current.accounts}, ${plan.current.balances}, ${plan.current.transactions})}"></li>
     </ul>
-    <p class="notice" th:text="#{restore.warning}"></p>
+    <p class="notice warning" th:text="#{restore.warning}"></p>
 
     <form method="post" th:action="@{/settings/backup/restore/{token}(token=${plan.token})}">
       <p>

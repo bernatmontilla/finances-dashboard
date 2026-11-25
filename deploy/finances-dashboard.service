@@ -1,0 +1,30 @@
+# Template: a systemd USER service for finances-dashboard (docs/install.md).
+# Copy to ~/.config/systemd/user/finances-dashboard.service. The layout assumed:
+#   ~/finances-dashboard/app/finances-dashboard.jar   the jar (deploy/update.sh keeps it current)
+#   ~/finances-dashboard/data                         the data folder (owner-only, never touched by updates)
+#   ~/.config/finances-dashboard/env                  optional settings, one NAME=value per line (e.g. SERVER_PORT)
+[Unit]
+Description=Personal finances dashboard
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+Environment=FINANCES_DATA_DIR=%h/finances-dashboard/data
+Environment=SERVER_ADDRESS=127.0.0.1
+Environment=SERVER_PORT=8080
+EnvironmentFile=-%h/.config/finances-dashboard/env
+ExecStart=/usr/bin/env java -Xmx300m -XX:+ExitOnOutOfMemoryError -jar %h/finances-dashboard/app/finances-dashboard.jar
+Restart=on-failure
+RestartSec=10
+# The whole process, not only the heap, stays under this; the heap cap above leaves room for the rest.
+MemoryHigh=420M
+MemoryMax=500M
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target

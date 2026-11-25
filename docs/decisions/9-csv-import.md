@@ -67,6 +67,12 @@
   and refused) and checks no name, IBAN, reference or amount of the file appears.
 - **`raw`**: the row as read, its cells joined with tabs, is stored in `transactions.raw` next to the
   normalised fields, as for the bank.
+- **Known limits**: the store's identity is the reference, else a fingerprint of date, amount, counterparty
+  and description, so importing the same file again with a *different* mapping (for example the description
+  column changed, or the reference column added) can store the rows again. A balance-after on the same date
+  as a balance the owner typed, with another amount, is added and becomes the latest one (the owner's entry
+  stays in the history); the report says "added to the history". The header row is the first line that is
+  not blank.
 - **Not done, on purpose**: bank presets, other formats (MT940, CAMT), categories, export, changing an
   account's source, importing into a manual account, a stale limit for the imported balance (its date and age
   are shown, as for manual balances), backing up `csv_mapping` (belongs to the backup issue).

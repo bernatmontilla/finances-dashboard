@@ -105,6 +105,7 @@ public final class CsvFile {
         private final List<RefusedRow> refused = new ArrayList<>();
         private final List<List<String>> head = new ArrayList<>();
         private int record;
+        private boolean headerSeen;
         private int rows;
         private int columns;
         private LocalDate firstDate;
@@ -125,7 +126,11 @@ public final class CsvFile {
             if (record <= 50) {
                 columns = Math.max(columns, cells.size());
             }
-            if (CsvParser.isBlank(cells) || (record == 1 && mapping.header())) {
+            if (CsvParser.isBlank(cells)) {
+                return;
+            }
+            if (mapping.header() && !headerSeen) {
+                headerSeen = true; // the first line that is not blank, as the preview shows it
                 return;
             }
             rows++;

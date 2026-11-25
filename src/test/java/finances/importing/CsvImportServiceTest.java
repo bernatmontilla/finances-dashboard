@@ -191,6 +191,13 @@ class CsvImportServiceTest {
     }
 
     @Test
+    void aBlankLineBeforeTheHeaderDoesNotMakeTheHeaderARow() {
+        ImportReport report = importDetected(text("\n\nDate;Amount\n01-06-2026;-1,00\n"));
+
+        assertThat(report).extracting(ImportReport::rows, ImportReport::added, ImportReport::refused).containsExactly(1, 1, 0);
+    }
+
+    @Test
     void aFileWithOnlyAHeaderOrNothingImportsNothing() {
         byte[] header = text("Date;Amount;Description\n");
         CsvMapping mapping = new CsvMapping(';', CsvMapping.UTF_8, true, "dd-MM-yyyy", ',', 0, 1, -1, -1, -1, -1, 2, -1, -1);

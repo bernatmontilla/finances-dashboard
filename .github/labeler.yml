@@ -11,13 +11,19 @@ risk:high:
           # talks to another host; the database schema; configuration; what installs and updates
           # the app on someone's machine; the public contracts. Main code and its tests.
           - src/*/java/finances/money/**
+          - src/*/java/finances/accounts/**
           - src/*/java/finances/sync/**
           - src/*/java/finances/importing/**
           - src/*/java/finances/backup/**
           - src/*/java/finances/outbound/**
           - src/main/resources/db/migration/**
           - src/main/resources/application*
+          - src/main/resources/templates/**
+          - src/main/resources/static/**
           - pom.xml
+          - mvnw
+          - mvnw.cmd
+          - .mvn/**
           - deploy/**
           - docs/contracts/**
           - .github/**

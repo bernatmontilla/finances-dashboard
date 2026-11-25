@@ -4,9 +4,6 @@ This is the single source of instructions for every AI working on this repositor
 imports it; other agents (Gemini, Codex) read `AGENTS.md` themselves. Change rules here, never in a
 tool-specific file.
 
-<!-- TEMPLATE: fill in every TODO, delete the hints, keep it short. A rule that is really a
-     procedure belongs in a skill; a fact that only matters for one area belongs in docs/gotchas.md. -->
-
 ## What this is
 
 A self-hosted personal finances dashboard for one person: bank balances and transactions

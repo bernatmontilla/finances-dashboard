@@ -3,6 +3,7 @@ package finances.importing;
 import finances.accounts.Account;
 import finances.accounts.AccountException;
 import finances.accounts.AccountService;
+import finances.accounts.DeliveredTransaction;
 import finances.accounts.DeliveryReport;
 import finances.accounts.ImportedBalance;
 import finances.accounts.Source;
@@ -13,6 +14,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Predicate;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 
@@ -108,9 +110,21 @@ public class CsvImportService {
         return CsvFile.head(CsvFile.decode(file, mapping.encoding()), mapping.delimiter());
     }
 
-    /** What the file would give with this mapping, without storing anything. */
-    public ParsedFile preview(byte[] file, CsvMapping mapping) {
-        return CsvFile.parse(file, mapping, accounts.today());
+    /** What the file would give with this mapping for the account, without storing anything. */
+    public ParsedFile preview(long accountId, byte[] file, CsvMapping mapping) {
+        return CsvFile.parse(file, mapping, accounts.today(), conflictsIn(accountId));
+    }
+
+    /**
+     * A row whose reference is already stored for the account with another booking date or amount.
+     * The store identifies a transaction by its reference, so delivering it would rewrite the earlier one.
+     */
+    private Predicate<DeliveredTransaction> conflictsIn(long accountId) {
+        return t -> jdbc.sql("select booking_date, amount_cents from transactions where account_id = ? and reference = ?")
+                .params(accountId, t.reference().strip())
+                .query((rs, n) -> !rs.getString(1).equals(t.bookingDate().toString()) || rs.getLong(2) != t.amountCents())
+                .optional()
+                .orElse(false);
     }
 
     /**
@@ -123,7 +137,7 @@ public class CsvImportService {
     public ImportReport importFile(long accountId, byte[] file, CsvMapping mapping) {
         importable(accountId);
         LocalDate today = accounts.today();
-        ParsedFile parsed = CsvFile.parse(file, mapping, today);
+        ParsedFile parsed = CsvFile.parse(file, mapping, today, conflictsIn(accountId));
 
         DeliveryReport delivery = new DeliveryReport(0, 0, 0, 0);
         if (!parsed.transactions().isEmpty()) {

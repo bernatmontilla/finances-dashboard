@@ -18,5 +18,7 @@ public enum RefusalReason {
     SIGN_IN_DEBIT_CREDIT,
     BALANCE_INVALID,
     /** The same reference came earlier in the file: a reference identifies one transaction, so a repeat would overwrite it. */
-    DUPLICATE_REFERENCE
+    DUPLICATE_REFERENCE,
+    /** The account already holds a transaction with this reference but another date or amount: a repeat would overwrite it. */
+    REFERENCE_CONFLICT
 }

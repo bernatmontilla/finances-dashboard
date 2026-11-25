@@ -212,6 +212,26 @@ class CsvImportServiceTest {
     }
 
     @Test
+    void aReferenceSharedByTwoMonthlyFilesNeverOverwritesTheEarlierTransaction() {
+        CsvMapping mapping = new CsvMapping(';', CsvMapping.UTF_8, true, "dd-MM-yyyy", ',', 0, 1, -1, -1, -1, -1, -1, 2, -1);
+        byte[] october = text("Date;Amount;Reference\n01-05-2026;-100,00;EE-MANDATE-1\n");
+        byte[] november = text("Date;Amount;Reference\n01-06-2026;-100,00;EE-MANDATE-1\n02-06-2026;-5,00;R-2\n");
+        importing.importFile(csv.id(), october, mapping);
+
+        assertThat(importing.preview(csv.id(), november, mapping).refused())
+                .containsExactly(new RefusedRow(2, RefusalReason.REFERENCE_CONFLICT));
+        ImportReport report = importing.importFile(csv.id(), november, mapping);
+
+        assertThat(report).extracting(ImportReport::added, ImportReport::updated, ImportReport::refused).containsExactly(1, 0, 1);
+        assertThat(report.refusedRows()).containsExactly(new RefusedRow(2, RefusalReason.REFERENCE_CONFLICT));
+        assertThat(transactions.forAccount(csv.id(), 0).items()).extracting(t -> t.bookingDate())
+                .containsExactlyInAnyOrder(LocalDate.of(2026, 5, 1), LocalDate.of(2026, 6, 2));
+
+        ImportReport again = importing.importFile(csv.id(), october, mapping);
+        assertThat(again).extracting(ImportReport::added, ImportReport::updated, ImportReport::known).containsExactly(0, 0, 1);
+    }
+
+    @Test
     void theDetectorNeverProposesAReferenceColumn() {
         assertThat(CsvDetector.detect(text("Date;Amount;Mandate reference\n01-06-2026;-1,00;EE-0001\n")).reference()).isEqualTo(-1);
     }

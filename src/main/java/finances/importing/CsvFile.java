@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Predicate;
 
 /**
  * Turns the bytes of a bank's CSV export into transactions, row by row, with a {@link CsvMapping}.
@@ -64,11 +65,19 @@ public final class CsvFile {
      * @throws CsvImportException {@code MAPPING_INCOMPLETE} when there is no date or no amount column
      */
     public static ParsedFile parse(byte[] bytes, CsvMapping mapping, LocalDate today) {
+        return parse(bytes, mapping, today, t -> false);
+    }
+
+    /**
+     * As {@link #parse(byte[], CsvMapping, LocalDate)}; a row with a reference whose transaction
+     * {@code conflicts} (the store holds another transaction under that reference) is refused.
+     */
+    public static ParsedFile parse(byte[] bytes, CsvMapping mapping, LocalDate today, Predicate<DeliveredTransaction> conflicts) {
         if (!mapping.isComplete()) {
             throw new CsvImportException(CsvImportException.Reason.MAPPING_INCOMPLETE);
         }
         String text = decode(bytes, mapping.encoding());
-        Reader reader = new Reader(mapping, today);
+        Reader reader = new Reader(mapping, today, conflicts);
         CsvParser.records(text, mapping.delimiter(), reader::accept);
         return reader.result();
     }
@@ -114,9 +123,12 @@ public final class CsvFile {
         private LocalDate newestDate;
         private final List<long[]> atNewest = new ArrayList<>(); // {record number, balance cents}
 
-        Reader(CsvMapping mapping, LocalDate today) {
+        private final Predicate<DeliveredTransaction> conflicts;
+
+        Reader(CsvMapping mapping, LocalDate today, Predicate<DeliveredTransaction> conflicts) {
             this.mapping = mapping;
             this.today = today;
+            this.conflicts = conflicts;
         }
 
         void accept(List<String> cells) {
@@ -169,9 +181,14 @@ public final class CsvFile {
                 throw new RowRefused(RefusalReason.DUPLICATE_REFERENCE);
             }
 
-            transactions.add(new DeliveredTransaction(date, null, cents, Money.EUR, optional(cells, mapping.name()),
+            DeliveredTransaction delivered = new DeliveredTransaction(date, null, cents, Money.EUR, optional(cells, mapping.name()),
                     optional(cells, mapping.iban()), optional(cells, mapping.description()), TransactionStatus.BOOKED,
-                    reference, String.join("\t", cells)));
+                    reference, String.join("\t", cells));
+            if (!reference.isEmpty() && conflicts.test(delivered)) {
+                // An earlier import holds another transaction under this reference: delivering it would overwrite that one.
+                throw new RowRefused(RefusalReason.REFERENCE_CONFLICT);
+            }
+            transactions.add(delivered);
 
             if (firstDate == null) {
                 firstDate = date;

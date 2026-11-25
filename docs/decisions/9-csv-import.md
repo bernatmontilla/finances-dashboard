@@ -70,7 +70,10 @@
 - **Reference**: never proposed by the detector (a bank's "reference" is often a mandate or a placeholder
   that repeats, and a repeated reference means one transaction in the store). When the owner maps it, a row
   whose reference came earlier in the same file is refused (`DUPLICATE_REFERENCE`), so it cannot overwrite
-  the first. The same reference in *different* files is the store's rule (#8): it is the same transaction.
+  the first. A row whose reference the account already holds from an earlier import, with another booking
+  date or amount, is refused too (`REFERENCE_CONFLICT`, also shown in the preview): the store identifies a
+  transaction by its reference alone and would rewrite the earlier one, which the owner may have kept as it
+  was. The same reference with the same date and amount is the same transaction (known, nothing changes).
 - **Balance, stricter**: it is added only when the history has nothing from the same or a later date
   (`balance_date >= ?`), so an import never pushes aside a figure the owner typed or corrected; and when
   any row of the file was refused the balance is left alone (the refused row may be the newest).

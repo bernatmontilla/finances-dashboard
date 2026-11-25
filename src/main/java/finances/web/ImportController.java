@@ -122,7 +122,7 @@ class ImportController {
     }
 
     private String previewPage(Model model, Account account, String token, byte[] bytes, CsvMapping mapping) {
-        ParsedFile parsed = mapping.isComplete() ? importing.preview(bytes, mapping) : null;
+        ParsedFile parsed = mapping.isComplete() ? importing.preview(account.id(), bytes, mapping) : null;
         model.addAttribute("view", ImportViews.preview(account, token, mapping, importing.head(bytes, mapping), parsed));
         model.addAttribute("delimiters", ImportViews.DELIMITERS);
         model.addAttribute("encodings", ImportViews.ENCODINGS);

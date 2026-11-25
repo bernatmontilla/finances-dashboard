@@ -1,7 +1,6 @@
 package finances.web;
 
 import java.sql.Connection;
-import java.util.Map;
 import javax.sql.DataSource;
 import org.springframework.boot.info.BuildProperties;
 import org.springframework.http.HttpStatus;
@@ -25,18 +24,23 @@ class HealthController {
     }
 
     @GetMapping("/health")
-    ResponseEntity<Map<String, String>> health() {
+    ResponseEntity<Health> health() {
         if (databaseReachable()) {
-            return ResponseEntity.ok(Map.of("status", "ok", "version", build.getVersion()));
+            return ResponseEntity.ok(new Health("ok", build.getVersion()));
         }
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                .body(Map.of("status", "unavailable", "version", build.getVersion()));
+                .body(new Health("unavailable", build.getVersion()));
     }
 
+    /** Field order is fixed by the record: status, then version. */
+    record Health(String status, String version) {
+    }
+
+    /** Reads the migrated schema, so a missing, empty or corrupt database file is not "reachable". */
     private boolean databaseReachable() {
         try (Connection connection = dataSource.getConnection();
                 var statement = connection.createStatement();
-                var result = statement.executeQuery("select 1")) {
+                var result = statement.executeQuery("select 1 from installation where id = 1")) {
             return result.next();
         } catch (Exception e) {
             return false;

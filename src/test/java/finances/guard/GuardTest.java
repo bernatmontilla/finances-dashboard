@@ -92,6 +92,7 @@ class GuardTest {
         Pattern network = Pattern.compile(
                 "java\\.net\\.http|java\\.net\\.(Socket|ServerSocket|URL|URLConnection|HttpURLConnection|DatagramSocket)\\b"
                         + "|javax\\.net\\.|\\b(HttpClient|RestTemplate|RestClient|WebClient|HttpURLConnection|SocketChannel)\\b"
+                        + "|java\\.net\\.\\*|\\bInetSocketAddress\\b|\\bProcessBuilder\\b|Runtime\\.getRuntime\\(\\)\\.exec"
                         + "|\\.openConnection\\(|\\.openStream\\(|new\\s+Socket\\(|new\\s+URL\\(");
         Path outbound = MAIN.resolve("java/finances/outbound");
         List<String> found = new ArrayList<>();

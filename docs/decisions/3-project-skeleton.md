@@ -16,7 +16,7 @@
   Migration `V1__installation.sql` creates one table with one row (creation time, UTC). Merged
   migrations are never edited.
 - **`/health`** answers 200 `{"status":"ok","version":…}` or 503 `{"status":"unavailable","version":…}`;
-  the body never carries an error message. The version is the Maven version (`BuildProperties`).
+  the body never carries an error message. "Reachable" means the migrated schema answers (`select 1 from installation where id = 1`), so a missing, empty or corrupt database file gives 503, not 200. The contract is the status code and the field names (`status`, `version`), not the byte layout. The version is the Maven version (`BuildProperties`).
   This is a public interface now (hard rule 4).
 - **Templates**: an element that shows text has an empty body and `th:text="#{key}"`; the guard test
   relies on that to find literal texts. The `xmlns:th` declaration is left out because it is a URL and
@@ -29,3 +29,4 @@
 - **For the lead** (`.github/` is out of scope here, hard rule 5): consider adding
   `src/*/java/finances/data/**` to `risk:high` in `labeler.yml`, because that package decides where the
   owner's data lives. The JSON body of `/health` (`status`, `version`) is part of its contract.
+- **Maven wrapper** pins `distributionSha256Sum` of Maven 3.9.11 (checked against the SHA-512 Maven Central publishes).

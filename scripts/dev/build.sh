@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 # The one build-and-test command, used by humans, agents (AGENTS.md) and CI (.github/workflows/ci.yml).
-# Replace the body with this project's build, for example:
-#   ./gradlew test bootJar
-#   npm ci && npm test && npm run build
-#   uv run pytest
+# Runs every test and produces target/finances-dashboard.jar. Needs a JDK 25 (JAVA_HOME or on PATH).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-echo "::warning::No build defined yet: fill in scripts/dev/build.sh"
-echo "No build defined yet: fill in scripts/dev/build.sh"
+./mvnw -B -ntp verify
+
+test -f target/finances-dashboard.jar
+echo "Built target/finances-dashboard.jar"

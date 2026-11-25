@@ -45,3 +45,9 @@ mention the test here.
   Rebasing a PR branch: read its old tip with `git ls-remote` and push with
   `--force-with-lease=<branch>:<old sha>`.
 - Never `pkill -f` with a pattern contained in the command itself: kill by PID.
+
+## Build environment
+
+- The Maven wrapper downloads Maven with `wget`/`curl`; in a cloud session wget needs
+  `ca_certificate=/root/.ccr/ca-bundle.crt` in `~/.wgetrc` (see `/root/.ccr/README.md`).
+- A cloud image may have only JDK 21: `apt-get install openjdk-25-jdk-headless` and set `JAVA_HOME`.

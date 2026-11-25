@@ -1,0 +1,8 @@
+﻿date,amount,name,iban,description,reference
+2026-06-01,-12.34,Corner Grocery,NL10SHOP0000000101,Groceries,REF-001
+2026-06-02,"-1,234.56",Example Landlord,NL80SHOP0000000102,"Rent, June",REF-002
+2026-06-03,100.00,Sam Voorbeeld,,"Line one
+line two",REF-003
+2026-06-03,-5.00,Example Gym,NL53SHOP0000000103,Gym,REF-004
+
+

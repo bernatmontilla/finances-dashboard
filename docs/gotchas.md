@@ -14,6 +14,10 @@ mention the test here.
 
 - Transactions are stored only through `TransactionService.deliver` (#8); it never writes the owner's
   note, so a new hand-entered field goes in its own table, not in `transactions`.
+- CSV import (#9) reads a file with its own decimal separator and hands the amount to `Money.parse`; a
+  row that cannot be read is refused with a reason and the row number, never repaired. An export in
+  Windows-1252 must not sit in `src/test/resources` (the guard tests read every file there as UTF-8):
+  build such bytes in `CsvFixtures`. A `>` inside a Thymeleaf attribute breaks the text guard: write `gt`.
 - A bank that books a pending item under another date and gives no reference twice is stored twice:
   the fingerprint includes the booking date (`docs/decisions/8-transactions-store.md`).
 

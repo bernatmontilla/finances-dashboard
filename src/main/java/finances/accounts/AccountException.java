@@ -15,6 +15,8 @@ public class AccountException extends RuntimeException {
         DATE_INVALID,
         DATE_IN_FUTURE,
         NOT_MANUAL,
+        NOT_CSV,
+        INVALID_SOURCE,
         ARCHIVED,
         DEBT_NEGATIVE,
         KIND_CHANGE_HAS_BALANCES

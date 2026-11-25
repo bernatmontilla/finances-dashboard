@@ -30,6 +30,13 @@
         </select>
         <span class="muted" th:text="#{account.debtHint}"></span>
       </p>
+      <p th:if="${account == null}">
+        <label for="source" th:text="#{account.field.source}"></label>
+        <select id="source" name="source">
+          <option th:each="code : ${sources}" th:value="${code}" th:selected="${code == source}" th:text="#{'source.' + ${code}}"></option>
+        </select>
+        <span class="muted" th:text="#{account.sourceHint}"></span>
+      </p>
       <p>
         <label for="iban" th:text="#{account.field.iban}"></label>
         <input id="iban" name="iban" type="text" maxlength="40" autocomplete="off" th:value="${iban}">

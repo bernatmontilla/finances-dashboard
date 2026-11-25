@@ -52,13 +52,28 @@ public class AccountService {
 
     @Transactional
     public Account addManual(String name, Scope scope, Kind kind, String iban) {
+        return add(name, scope, kind, iban, Source.MANUAL);
+    }
+
+    /** A new account fed by CSV files (issue #9): its balance is typed in or comes from an imported file. */
+    @Transactional
+    public Account addCsv(String name, Scope scope, Kind kind, String iban) {
+        return add(name, scope, kind, iban, Source.CSV);
+    }
+
+    /** Only the sources that need no bank connection can be chosen; a bank account comes from the sync. */
+    @Transactional
+    public Account add(String name, Scope scope, Kind kind, String iban, Source source) {
+        if (source != Source.MANUAL && source != Source.CSV) {
+            throw new AccountException(AccountException.Reason.INVALID_SOURCE);
+        }
         String cleanName = cleanName(name);
         String cleanIban = cleanIban(iban);
         requireIbanFree(cleanIban, -1);
         KeyHolder key = new GeneratedKeyHolder();
         try {
             jdbc.sql("insert into account (name, scope, kind, source, iban, created_at) values (?, ?, ?, ?, ?, ?)")
-                    .params(cleanName, scope.code(), kind.code(), Source.MANUAL.code(), cleanIban, Instant.now(clock).toString())
+                    .params(cleanName, scope.code(), kind.code(), source.code(), cleanIban, Instant.now(clock).toString())
                     .update(key);
         } catch (DataIntegrityViolationException e) {
             throw new AccountException(AccountException.Reason.IBAN_DUPLICATE);
@@ -187,11 +202,51 @@ public class AccountService {
         jdbc.sql("delete from balance where id = ? and account_id = ?").params(entryId, accountId).update();
     }
 
+    /**
+     * Records the balance a CSV file ended with (the balance-after column of its newest row), as one more
+     * entry in the history: nothing the owner typed is changed or removed. Importing the same file again
+     * finds the same date and amount and adds nothing; when the history already has an entry from the same
+     * or a later date (typed or corrected by the owner, or imported) the file's one is left out, so an
+     * import never pushes a figure the owner entered out of sight.
+     */
+    @Transactional
+    public ImportedBalance recordImportedBalance(long accountId, Money amount, LocalDate date) {
+        Account account = get(accountId);
+        if (account.source() != Source.CSV) {
+            throw new AccountException(AccountException.Reason.NOT_CSV);
+        }
+        if (account.archived()) {
+            throw new AccountException(AccountException.Reason.ARCHIVED);
+        }
+        if (date.isAfter(today()) || (account.kind() == Kind.DEBT && amount.isNegative())) {
+            return ImportedBalance.REFUSED;
+        }
+        int same = jdbc.sql("select count(*) from balance where account_id = ? and balance_date = ? and amount_cents = ?")
+                .params(accountId, date.toString(), amount.cents())
+                .query(Integer.class)
+                .single();
+        if (same > 0) {
+            return ImportedBalance.UNCHANGED;
+        }
+        int newer = jdbc.sql("select count(*) from balance where account_id = ? and balance_date >= ?")
+                .params(accountId, date.toString())
+                .query(Integer.class)
+                .single();
+        if (newer > 0) {
+            return ImportedBalance.OLDER;
+        }
+        jdbc.sql("insert into balance (account_id, amount_cents, currency, balance_date, entered_at) values (?, ?, ?, ?, ?)")
+                .params(accountId, amount.cents(), amount.currency(), date.toString(), Instant.now(clock).toString())
+                .update();
+        return ImportedBalance.UPDATED;
+    }
+
     // ----- rules
 
+    /** A balance can be typed in for an account that is not fed by a bank: a manual one or a CSV one. */
     private Account requireEditable(long accountId) {
         Account account = get(accountId);
-        if (account.source() != Source.MANUAL) {
+        if (account.source() == Source.BANK) {
             throw new AccountException(AccountException.Reason.NOT_MANUAL);
         }
         if (account.archived()) {

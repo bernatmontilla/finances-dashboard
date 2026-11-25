@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title th:text="#{import.preview.title}"></title>
+  <link rel="stylesheet" th:href="@{/app.css}">
+</head>
+<body>
+  <main>
+    <nav th:replace="~{fragments :: nav}"></nav>
+    <h1 th:text="#{import.preview.title}"></h1>
+    <p th:text="${view.account.name}"></p>
+    <p th:replace="~{fragments :: error}"></p>
+
+    <h2 th:text="#{import.preview.head}"></h2>
+    <p th:if="${view.empty}" th:text="#{import.preview.noRows}"></p>
+    <p th:unless="${view.empty}" class="muted" th:text="#{import.preview.scrollHint}"></p>
+    <div class="scroll" th:unless="${view.empty}">
+      <table class="preview">
+        <thead>
+          <tr>
+            <th th:each="i : ${#numbers.sequence(0, view.columns - 1)}" th:text="#{import.column(${i + 1})}"></th>
+          </tr>
+          <tr th:if="${view.header}">
+            <th th:each="h : ${view.headers}" th:text="${h}"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr th:each="row : ${view.rows}">
+            <td th:each="cell : ${row}" th:text="${cell}"></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 th:text="#{import.result}"></h2>
+    <p th:unless="${view.complete}" class="notice" th:text="#{import.incomplete}"></p>
+    <th:block th:if="${view.complete}">
+      <p th:text="#{import.summary(${view.read}, ${view.importable}, ${view.refusedCount})}"></p>
+      <p th:if="${view.hasBalance()}" th:text="#{import.balanceFound(${view.balance}, ${view.balanceDate})}"></p>
+      <p th:if="${view.balanceUndeterminable}" class="notice" th:text="#{import.balance.not_determinable}"></p>
+      <ul class="list" th:if="${view.hasRefused()}">
+        <li th:each="r : ${view.refused}" class="error">
+          <span th:text="#{import.refusedRow(${r.row})}"></span>
+          <span th:text="#{${r.reasonKey}}"></span>
+        </li>
+      </ul>
+      <p th:if="${view.refusedCount gt view.refused.size()}" class="muted" th:text="#{import.moreRefused}"></p>
+    </th:block>
+
+    <form method="post" th:action="@{/accounts/{id}/import/confirm(id=${view.account.id})}">
+      <input type="hidden" name="token" th:value="${view.token}">
+
+      <h2 th:text="#{import.settings}"></h2>
+      <p>
+        <label for="delimiter" th:text="#{import.setting.delimiter}"></label>
+        <select id="delimiter" name="delimiter">
+          <option th:each="code : ${delimiters}" th:value="${code}" th:selected="${code == view.delimiter}" th:text="#{'import.delimiter.' + ${code}}"></option>
+        </select>
+      </p>
+      <p>
+        <label for="encoding" th:text="#{import.setting.encoding}"></label>
+        <select id="encoding" name="encoding">
+          <option th:each="code : ${encodings}" th:value="${code}" th:selected="${code == view.encoding}" th:text="#{'import.encoding.' + ${code}}"></option>
+        </select>
+      </p>
+      <p>
+        <label for="header" class="check">
+          <input id="header" name="header" type="checkbox" th:value="true" th:checked="${view.header}">
+          <span th:text="#{import.setting.header}"></span>
+        </label>
+      </p>
+      <p>
+        <label for="dateFormat" th:text="#{import.setting.dateFormat}"></label>
+        <select id="dateFormat" name="dateFormat">
+          <option th:each="format : ${dateFormats}" th:value="${format}" th:selected="${format == view.dateFormat}" th:text="${format}"></option>
+        </select>
+      </p>
+      <p>
+        <label for="decimal" th:text="#{import.setting.decimal}"></label>
+        <select id="decimal" name="decimal">
+          <option th:each="code : ${decimals}" th:value="${code}" th:selected="${code == view.decimal}" th:text="#{'import.decimal.' + ${code}}"></option>
+        </select>
+      </p>
+
+      <h2 th:text="#{import.columns}"></h2>
+      <p class="muted" th:text="#{import.columns.hint}"></p>
+      <p th:each="field : ${view.fields}">
+        <label th:for="${field.name}" th:text="#{'import.field.' + ${field.name}}"></label>
+        <select th:id="${field.name}" th:name="${field.name}">
+          <option th:value="-1" th:selected="${field.value == -1}" th:text="#{import.none}"></option>
+          <th:block th:if="${view.columns gt 0}">
+            <option th:each="i : ${#numbers.sequence(0, view.columns - 1)}" th:value="${i}" th:selected="${i == field.value}"
+                    th:text="${view.header} ? #{import.columnNamed(${i + 1}, ${view.headers[i]})} : #{import.column(${i + 1})}"></option>
+          </th:block>
+        </select>
+      </p>
+
+      <p class="actions">
+        <button type="submit" th:text="#{import.confirm}"></button>
+        <button type="submit" class="secondary" th:formaction="@{/accounts/{id}/import/preview(id=${view.account.id})}" th:text="#{import.update}"></button>
+        <a th:href="@{/accounts/{id}(id=${view.account.id})}" th:text="#{account.cancel}"></a>
+      </p>
+    </form>
+  </main>
+</body>
+</html>

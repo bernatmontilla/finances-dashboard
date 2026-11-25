@@ -85,3 +85,10 @@ form.inline { display: inline; }
 .pager { display: flex; gap: 1rem; flex-wrap: wrap; margin: 1rem 0; }
 .list .delivered { display: block; }
 .pager a { display: inline-block; padding: 0.5rem 0; }
+
+.scroll { overflow-x: auto; max-width: 100%; }
+table.preview { border-collapse: collapse; font-size: 0.875rem; }
+table.preview th, table.preview td { border: 1px solid var(--line); padding: 0.25rem 0.5rem; text-align: left; white-space: nowrap; max-width: 14rem; overflow: hidden; text-overflow: ellipsis; }
+table.preview thead th { font-weight: 600; }
+label.check { display: flex; gap: 0.5rem; align-items: center; }
+label.check input { width: auto; }

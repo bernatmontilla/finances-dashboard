@@ -58,8 +58,9 @@
   archived one is a 409). Balances can be typed in for a `csv` account as for a manual one: `requireEditable`
   now refuses only a `bank` account (the reason name `NOT_MANUAL` is kept). One source per account stays
   the rule of #8: a bank and a CSV import on one account are not deduplicated against each other.
-- **Size**: `finances.import.max-file-size` (default `10MB`) feeds Spring's multipart limits;
-  `resolve-lazily` makes the limit land inside the controller so it is shown as a page, not a bare 413.
+- **Size**: `finances.import.max-file-size` (default `10MB`) is checked by
+  `ImportController` itself (the multipart limit is off for the whole application since #12, because a
+  backup file grows with the data), so a too large file is shown as a page, not a bare 413.
   A 10 MB file is read as text in memory and kept as a list of delivered transactions until the store has
   them; the store reads them one at a time inside one database transaction. That is the largest memory
   use of the feature, and why only two uploads are held.
@@ -77,8 +78,9 @@
 - **Balance, stricter**: it is added only when the history has nothing from the same or a later date
   (`balance_date >= ?`), so an import never pushes aside a figure the owner typed or corrected; and when
   any row of the file was refused the balance is left alone (the refused row may be the newest).
-- **Upload on disk**: `spring.servlet.multipart.file-size-threshold` equals the size limit, so an upload is
-  kept in memory while the request is read and never touches the temp folder.
+- **Upload on disk**: since #12 the application's multipart configuration (`DataConfig`) spools every upload
+  to the data folder's scratch folder while the request is read; the servlet container removes it when the
+  request ends. Between the preview and the import the file is only in memory (`PendingUploads`).
 - **Known limits**: a file with an unsigned amount and a separate direction column (debit/credit marker)
   cannot be mapped (spec: no sign column), and would be read as all income; ask on the issue if a bank
   needs it.  the store's identity is the reference, else a fingerprint of date, amount, counterparty

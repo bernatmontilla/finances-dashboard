@@ -14,6 +14,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.Locale;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.util.unit.DataSize;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.HandlerMapping;
@@ -39,8 +41,11 @@ class ImportController {
     private final AccountService accounts;
     private final CsvImportService importing;
     private final PendingUploads uploads;
+    private final long maxFileBytes;
 
-    ImportController(AccountService accounts, CsvImportService importing, PendingUploads uploads) {
+    ImportController(AccountService accounts, CsvImportService importing, PendingUploads uploads,
+                     @Value("${finances.import.max-file-size}") DataSize maxFileSize) {
+        this.maxFileBytes = maxFileSize.toBytes();
         this.accounts = accounts;
         this.importing = importing;
         this.uploads = uploads;
@@ -57,6 +62,10 @@ class ImportController {
         Account account = importable(id);
         if (file.isEmpty()) {
             return refused(response, model, new CsvImportException(CsvImportException.Reason.NO_FILE), uploadPage(model, account));
+        }
+        if (file.getSize() > maxFileBytes) {
+            // The multipart limit is off globally (a backup file grows with the data), so the CSV limit is checked here.
+            throw new MaxUploadSizeExceededException(maxFileBytes);
         }
         byte[] bytes = file.getBytes();
         String token = uploads.hold(id, bytes);
@@ -105,7 +114,7 @@ class ImportController {
         }
     }
 
-    /** The multipart limit is checked while the file is read (lazily, inside the handler), so this is where it lands. */
+    /** The CSV size limit ({@code finances.import.max-file-size}) is checked in {@link #upload}; this is where it lands. */
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     String tooLarge(HttpServletRequest request, Model model, HttpServletResponse response) {
         @SuppressWarnings("unchecked")

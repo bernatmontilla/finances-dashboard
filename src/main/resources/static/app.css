@@ -74,6 +74,7 @@ form.inline { display: inline; }
 
 .error { color: var(--danger); font-weight: 600; }
 .notice { border: 1px solid var(--line); padding: 0.5rem; border-radius: 0.25rem; }
+.notice.warning { border-color: var(--danger); font-weight: 600; }
 
 .transactions li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 0.75rem; align-items: baseline; }
 .transactions .meta { grid-column: 1 / -1; font-size: 0.875rem; }

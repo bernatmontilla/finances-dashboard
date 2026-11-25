@@ -119,7 +119,7 @@ failed, with nothing swapped. Two runs at once are safe: the second leaves at on
 is never touched.
 
 An automatic rollback puts the old jar back; it does not undo database migrations the new version
-already ran. Make a backup before a release you are unsure of.
+already ran. Make a backup before a release you are unsure of ([Backup and restore](#backup-and-restore)).
 
 ## Updating by hand
 
@@ -149,6 +149,81 @@ The jar is copied to a temporary file first and moved over with `mv -f`: copying
 Leave the timer off until a newer release exists, or the next run installs the same version again
 (an automatic rollback remembers the failed release; a manual one does not). A database migration is never undone: if the new version changed the data, restore a backup made
 before the update as well.
+
+## What is in the data folder
+
+Everything the installation owns is in one folder (`~/finances-dashboard/data` in this guide). Only
+you may read it (`chmod 700`), and updates never touch it.
+
+| In the data folder | What it is | In a backup? |
+|---|---|---|
+| `finances.db` | the database: accounts, balances, transactions, notes, everything entered by hand | yes |
+| `finances.previous.db` | the database as it was before the last restore, so that one restore can be undone | no |
+| `finances.replaced.db` | only for a moment during a restore; see below | no |
+| `finances.lock` | lets only one instance use the folder | no |
+| `tmp/` | uploads and backups in the making; emptied at every start, never web-visible | no |
+| secret files | the bank application key, bank session ids, the after-tax token | **no, on purpose** |
+
+The secret files are plain files in the data folder, readable by the service user only, never in a
+log and never in a backup file. Each issue that adds one lists it in this table. Today there are
+none; the bank link adds its files in the next steps of the plan.
+
+## Backup and restore
+
+A backup is **one file**: a zip with a small description (`manifest.properties`: format version,
+application version, database version, when it was made, a checksum) and a consistent snapshot of
+the database. It is made while the application runs, also while a sync or an import is running. It
+holds all your financial data, so keep it where only you can read it.
+
+**It does not hold the secrets.** After restoring on a new machine the bank links must be renewed.
+To keep the secrets too, copy the secret files of the table above to the same place by hand.
+
+### On the settings page
+
+*Settings*, *Backup*: **Download backup** gives the file. **Restore** takes such a file, checks it
+completely (a damaged, cut-off or foreign file, or one made by a newer version, is refused and
+changes nothing), shows what it holds and what it will replace, and asks you to type `RESTORE`.
+Then it replaces the database, brings it up to date with this version's migrations, and keeps the
+database from before as `finances.previous.db`: **Undo the last restore** puts it back (and the
+restore that was undone is kept in its place, so you can go forward again).
+
+A backup made by an older version always restores in a newer one. One made by a newer version than
+the running one is refused with a message; update first.
+
+### From the command line, for a scheduled copy to another disk
+
+The jar does both without the web page. The service unit sets the data folder in its own
+environment, so give it with `--data-dir` (or `FINANCES_DATA_DIR`):
+
+```bash
+# Safe while the service runs. A folder as target gives finances-backup-<UTC time>.zip in it;
+# an existing file is never overwritten.
+java -Xmx128m -jar ~/finances-dashboard/app/finances-dashboard.jar backup \
+  --data-dir ~/finances-dashboard/data /mnt/backup-disk/
+
+# Restoring needs the service stopped: it takes the data folder's lock and says so when it is in use.
+systemctl --user stop finances-dashboard.service
+java -Xmx128m -jar ~/finances-dashboard/app/finances-dashboard.jar restore \
+  --data-dir ~/finances-dashboard/data /mnt/backup-disk/finances-backup-<time>.zip      # shows what it holds, changes nothing
+java -Xmx128m -jar ~/finances-dashboard/app/finances-dashboard.jar restore \
+  --data-dir ~/finances-dashboard/data /mnt/backup-disk/finances-backup-<time>.zip --yes
+systemctl --user start finances-dashboard.service
+# Undo: java ... undo-restore --data-dir ~/finances-dashboard/data --yes
+```
+
+Exit status: 0 done, 1 refused or failed (nothing changed), 2 wrong use or `--yes` missing. For a
+daily copy, put the `backup` line in a cron job or a systemd user timer of your own, and prune old
+files there; the application never deletes your backups.
+
+A restore briefly needs room for the uploaded file about three times over in `tmp/` (the upload, its copy and the checked database), so leave free space of a few times the backup size on the disk of the data folder; the command line restore needs one copy less.
+
+If the disk is full, a backup fails without leaving a partial file and the database in use is
+untouched; so is a restore. If a restore is cut off by a power failure at the very moment of the swap, the next start puts the
+database from before back (`finances.replaced.db` becomes `finances.db` when there is no
+`finances.db`). If a file `finances.replaced.db` is still there next to a working database, an
+earlier restore could not finish tidying up: the file may hold data that exists nowhere else, so a
+restore or undo is refused until you have looked at it. Keep it somewhere safe or delete it, with the
+service stopped.
 
 ## Where the logs are
 

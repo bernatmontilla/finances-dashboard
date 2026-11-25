@@ -112,6 +112,29 @@ class GuardTest {
     }
 
     @Test
+    void theBackupCodeNeverLogsAndOnlyTheCommandLinePrints() throws IOException {
+        // Issue #12, hard rule 11: a backup is the owner's complete financial data. The service and the
+        // controller that streams it have no logger and print nothing; only BackupCommand writes to the
+        // terminal, and only counts and versions.
+        Pattern output = Pattern.compile("\\bLogger\\b|LoggerFactory|System\\.(out|err)|printStackTrace|@Slf4j");
+        List<String> found = new ArrayList<>();
+        List<Path> code = new ArrayList<>(files(MAIN.resolve("java/finances/backup")));
+        code.add(MAIN.resolve("java/finances/web/SettingsController.java"));
+        for (Path file : code) {
+            if (file.getFileName().toString().equals("BackupCommand.java")) {
+                continue;
+            }
+            List<String> lines = Files.readAllLines(file);
+            for (int i = 0; i < lines.size(); i++) {
+                if (output.matcher(lines.get(i)).find()) {
+                    found.add(file + ":" + (i + 1) + ": " + lines.get(i).strip());
+                }
+            }
+        }
+        assertThat(found).as("no logging or printing in the backup code").isEmpty();
+    }
+
+    @Test
     void noFileHoldsAFixedDataFolderOutsideTheBuild() throws IOException {
         Pattern fixed = Pattern.compile("finances\\.data-dir\\s*[=:]\\s*\\S");
         List<String> found = new ArrayList<>();

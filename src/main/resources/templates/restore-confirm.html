@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title th:text="#{restore.title}"></title>
+  <link rel="stylesheet" th:href="@{/app.css}">
+</head>
+<body>
+  <main>
+    <nav th:replace="~{fragments :: nav}"></nav>
+    <h1 th:text="#{restore.title}"></h1>
+    <p th:replace="~{fragments :: error}"></p>
+
+    <h2 th:text="#{restore.manifest}"></h2>
+    <ul class="list">
+      <li th:text="#{restore.madeAt(${madeAt})}"></li>
+      <li th:text="#{restore.version(${manifest.applicationVersion})}"></li>
+      <li th:text="#{restore.format(${manifest.formatVersion}, ${manifest.schemaVersion})}"></li>
+    </ul>
+
+    <h2 th:text="#{restore.replaces}"></h2>
+    <ul class="list">
+      <li th:text="#{restore.contents.backup(${plan.backup.accounts}, ${plan.backup.balances}, ${plan.backup.transactions})}"></li>
+      <li th:text="#{restore.contents.current(${plan.current.accounts}, ${plan.current.balances}, ${plan.current.transactions})}"></li>
+    </ul>
+    <p class="notice warning" th:text="#{restore.warning}"></p>
+
+    <form method="post" th:action="@{/settings/backup/restore/{token}(token=${plan.token})}">
+      <p>
+        <label for="confirm" th:text="#{restore.type(${restoreWord})}"></label>
+        <input id="confirm" name="confirm" type="text" autocomplete="off" required>
+      </p>
+      <p class="actions">
+        <button type="submit" class="danger" th:text="#{restore.confirm}"></button>
+      </p>
+    </form>
+    <form method="post" th:action="@{/settings/backup/restore/{token}/cancel(token=${plan.token})}">
+      <p class="actions">
+        <button type="submit" class="link" th:text="#{restore.cancel}"></button>
+      </p>
+    </form>
+  </main>
+</body>
+</html>

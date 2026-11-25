@@ -9,6 +9,7 @@
     <a th:href="@{/}" th:text="#{nav.overview}"></a>
     <a th:href="@{/accounts}" th:text="#{nav.accounts}"></a>
     <a th:href="@{/transactions}" th:text="#{nav.transactions}"></a>
+    <a th:href="@{/settings}" th:text="#{nav.settings}"></a>
   </nav>
 
   <p th:fragment="error" th:if="${error != null}" class="error" role="alert" th:text="#{${error}}"></p>

@@ -43,6 +43,20 @@ class DataFolderTest {
     }
 
     @Test
+    void aRestoreCutOffBetweenTwoRenamesIsPutBackAtTheNextStart() throws Exception {
+        Files.writeString(temp.resolve("finances.replaced.db"), "the owner's database");
+        DataFolder.open(temp.toString()).close();
+        assertThat(Files.readString(temp.resolve("finances.db"))).isEqualTo("the owner's database");
+        assertThat(temp.resolve("finances.replaced.db")).doesNotExist();
+
+        // With a database in place, the parked file is left alone for the owner to look at.
+        Files.writeString(temp.resolve("finances.replaced.db"), "parked");
+        DataFolder.open(temp.toString()).close();
+        assertThat(Files.readString(temp.resolve("finances.db"))).isEqualTo("the owner's database");
+        assertThat(Files.readString(temp.resolve("finances.replaced.db"))).isEqualTo("parked");
+    }
+
+    @Test
     void refusesAFileWhereAFolderIsExpected() throws Exception {
         Path file = Files.createFile(temp.resolve("not-a-folder"));
         assertThatThrownBy(() -> DataFolder.open(file.toString())).isInstanceOf(DataFolderException.class);

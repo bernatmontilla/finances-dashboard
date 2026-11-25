@@ -16,15 +16,19 @@ class StartupFailureTest {
     @TempDir
     Path temp;
 
-    private SpringApplicationBuilder app(String... properties) {
+    /**
+     * The data folder is passed as a command-line argument, which outranks an environment variable
+     * FINANCES_DATA_DIR: a test must never open the folder of a real installation.
+     */
+    private ConfigurableApplicationContext run(String dataDir) {
         return new SpringApplicationBuilder(FinancesApplication.class)
                 .web(WebApplicationType.NONE)
-                .properties(properties);
+                .run("--finances.data-dir=" + dataDir);
     }
 
     @Test
     void startingWithoutADataFolderFailsWithTheDataFolderMessage() {
-        assertThatThrownBy(() -> app("finances.data-dir=").run())
+        assertThatThrownBy(() -> run(""))
                 .hasRootCauseInstanceOf(DataFolderException.class)
                 .rootCause()
                 .hasMessageContaining("finances.data-dir");
@@ -32,10 +36,10 @@ class StartupFailureTest {
 
     @Test
     void startingTwiceOnTheSameDataFolderFailsTheSecondTime() {
-        String dir = "finances.data-dir=" + temp;
-        try (ConfigurableApplicationContext first = app(dir).run()) {
+        String dir = temp.toString();
+        try (ConfigurableApplicationContext first = run(dir)) {
             assertThat(first.isActive()).isTrue();
-            assertThatThrownBy(() -> app(dir).run())
+            assertThatThrownBy(() -> run(dir))
                     .hasRootCauseInstanceOf(DataFolderException.class)
                     .rootCause()
                     .hasMessageContaining("already in use");

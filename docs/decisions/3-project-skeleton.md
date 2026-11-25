@@ -24,3 +24,8 @@
 - **Version** is `0.1.0-SNAPSHOT` in `pom.xml`; releases and version bumps are a later issue.
 - **Build**: `scripts/dev/build.sh` is `./mvnw verify`; the jar is `target/finances-dashboard.jar`
   (`finalName`). CI sets up Temurin 25. Full build locally: about 20 s.
+- **Tests and the environment**: `StartupFailureTest` passes the folder as a command-line argument, which
+  outranks `FINANCES_DATA_DIR`, so a test never opens the folder of a real installation.
+- **For the lead** (`.github/` is out of scope here, hard rule 5): consider adding
+  `src/*/java/finances/data/**` to `risk:high` in `labeler.yml`, because that package decides where the
+  owner's data lives. The JSON body of `/health` (`status`, `version`) is part of its contract.

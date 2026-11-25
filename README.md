@@ -27,7 +27,7 @@ a private network is the installer's job.
 | `finances.data-dir` (or the environment variable `FINANCES_DATA_DIR`) | **Required.** The folder that holds the database. Starting without it, or twice on the same folder, fails with a clear message. |
 | `server.port` (or `SERVER_PORT`) | The port, default `8080`. |
 
-`GET /health` answers `200` with the version when the database is reachable, and `503` otherwise.
+`GET /health` answers `200` with `{"status":"ok","version":"…"}` when the database is reachable, and `503` with `{"status":"unavailable","version":"…"}` otherwise.
 
 One test class while working: `./mvnw -q test -Dtest=ClassName`.
 

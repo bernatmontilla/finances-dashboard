@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.CopyOption;
 import java.nio.file.DirectoryStream;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
@@ -71,6 +72,12 @@ public final class BackupService {
     private static final String SCRATCH = "tmp";
     private static final Duration GATE_WAIT = Duration.ofSeconds(30);
     private static final int MANIFEST_LIMIT = 16 * 1024;
+    /**
+     * Free space kept beyond the staged copy of a restore. Migrating the copy can need about as much room
+     * again (a table rebuilt next to the old one, the journal), so the margin is the larger of this and the
+     * database's own size: a restore needs {@code databaseBytes + max(SPACE_MARGIN, databaseBytes)}.
+     */
+    static final long SPACE_MARGIN = 16L * 1024 * 1024;
     private static final Pattern TOKEN = Pattern.compile("[0-9a-f]{32}");
     private static final Pattern MIGRATION_NAME = Pattern.compile("V(\\d+(?:[._]\\d+)*)__.*\\.sql");
     private static final DateTimeFormatter FILE_STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneOffset.UTC);
@@ -81,6 +88,7 @@ public final class BackupService {
     private final String applicationVersion;
     private final Clock clock;
     private final Duration gateWait;
+    private final Disk disk;
 
     /**
      * @param folder  the data folder (the caller holds {@code DataFolder}'s lock, or knows nothing else restores)
@@ -91,6 +99,11 @@ public final class BackupService {
     }
 
     BackupService(Path folder, DatabaseGate gate, String applicationVersion, Clock clock, Duration gateWait) {
+        this(folder, gate, applicationVersion, clock, gateWait, Disk.REAL);
+    }
+
+    BackupService(Path folder, DatabaseGate gate, String applicationVersion, Clock clock, Duration gateWait, Disk disk) {
+        this.disk = disk;
         this.gateWait = gateWait;
         this.folder = folder;
         this.gate = gate;
@@ -269,6 +282,7 @@ public final class BackupService {
             if (databaseEntry == null) {
                 throw damaged();
             }
+            requireRoomFor(manifest.databaseBytes());
             extract(zip, databaseEntry, staged, manifest);
             Summary backup;
             try (Connection connection = open(staged)) {
@@ -291,6 +305,16 @@ public final class BackupService {
             throw damaged();
         } catch (IOException e) {
             throw new BackupException(Reason.FAILED, "The file could not be read or the disk is full. Nothing was changed.", e);
+        }
+    }
+
+    /** Refuses before a byte is extracted: the size comes from the file itself, so it is checked against the disk. */
+    private void requireRoomFor(long databaseBytes) throws IOException {
+        long margin = Math.max(SPACE_MARGIN, databaseBytes);
+        long needed = databaseBytes > Long.MAX_VALUE - margin ? Long.MAX_VALUE : databaseBytes + margin;
+        if (disk.usableSpace(folder.resolve(SCRATCH)) < needed) {
+            throw new BackupException(Reason.NOT_ENOUGH_SPACE,
+                    "There is not enough free disk space in the data folder to restore this backup. Nothing was changed.");
         }
     }
 
@@ -384,6 +408,7 @@ public final class BackupService {
     private void replaceDatabaseWith(Path source) {
         Path database = database();
         Path replaced = folder.resolve(DataFolder.REPLACED_DATABASE_FILE);
+        boolean[] oldDatabasePutBack = {true};
         try {
             gate.exclusive(gateWait, () -> {
                 if (Files.exists(replaced)) {
@@ -394,27 +419,21 @@ public final class BackupService {
                 boolean hadDatabase = Files.isRegularFile(database);
                 if (hadDatabase) {
                     flush(database);
-                    Files.move(database, replaced);
+                    disk.move(database, replaced);
                 }
                 boolean movedIn = false;
                 try {
                     force(source);
-                    Files.move(source, database);
+                    disk.move(source, database);
                     movedIn = true;
                     migrate(database);
                 } catch (Exception failure) {
-                    deleteSidecars(database);
-                    if (movedIn) {
-                        Files.move(database, source, StandardCopyOption.REPLACE_EXISTING);
-                    }
-                    if (hadDatabase) {
-                        Files.move(replaced, database, StandardCopyOption.REPLACE_EXISTING);
-                    }
+                    oldDatabasePutBack[0] = rollBack(failure, source, database, replaced, movedIn, hadDatabase);
                     throw failure;
                 }
                 if (hadDatabase) {
                     try {
-                        Files.move(replaced, previous(), StandardCopyOption.REPLACE_EXISTING);
+                        disk.move(replaced, previous(), StandardCopyOption.REPLACE_EXISTING);
                     } catch (IOException keptAside) {
                         // The restore itself succeeded and must not be reported as failed; the old
                         // database stays as finances.replaced.db, and the next restore refuses
@@ -426,11 +445,50 @@ public final class BackupService {
             });
         } catch (BackupException e) {
             throw e;
-        } catch (IOException | SQLException e) {
-            throw new BackupException(Reason.FAILED, "The database could not be replaced (is the disk full?). The old database is still in use.", e);
         } catch (Exception e) {
+            if (!oldDatabasePutBack[0]) {
+                throw new BackupException(Reason.OLD_DATABASE_ASIDE, "The restore failed and the old database could not be put back. "
+                        + "It is kept as " + replaced.getFileName() + " in the data folder; see docs/install.md.", e);
+            }
+            if (e instanceof IOException || e instanceof SQLException) {
+                throw new BackupException(Reason.FAILED, "The database could not be replaced (is the disk full?). The old database is still in use.", e);
+            }
             throw new BackupException(Reason.MIGRATION_FAILED,
                     "The restored database could not be brought up to date. The old database is back in use and nothing was changed.", e);
+        }
+    }
+
+    /**
+     * Undoes a swap that failed. What matters is that the old database is in use again, so that step never
+     * depends on another one: each clean-up step has its own {@code try}, a failure of one is added to
+     * {@code failure} (the error that is rethrown and shown) and the next step still runs.
+     *
+     * @return whether the old database is in use again (always true when there was none to put back)
+     */
+    private boolean rollBack(Exception failure, Path source, Path database, Path replaced, boolean movedIn, boolean hadDatabase) {
+        if (movedIn) {
+            // The half-migrated file goes back where it came from (an undo's source is the only copy of that data).
+            try {
+                disk.move(database, source, StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException | RuntimeException e) {
+                failure.addSuppressed(e);
+            }
+        }
+        try {
+            deleteSidecars(database);
+        } catch (IOException | RuntimeException e) {
+            failure.addSuppressed(e);
+        }
+        if (!hadDatabase) {
+            return true;
+        }
+        try {
+            // Also replaces the half-migrated file when it could not be moved away above.
+            disk.move(replaced, database, StandardCopyOption.REPLACE_EXISTING);
+            return true;
+        } catch (IOException | RuntimeException e) {
+            failure.addSuppressed(e);
+            return false;
         }
     }
 
@@ -460,9 +518,9 @@ public final class BackupService {
         deleteSidecars(database);
     }
 
-    private static void deleteSidecars(Path database) throws IOException {
-        Files.deleteIfExists(database.resolveSibling(database.getFileName() + "-wal"));
-        Files.deleteIfExists(database.resolveSibling(database.getFileName() + "-shm"));
+    private void deleteSidecars(Path database) throws IOException {
+        disk.deleteIfExists(database.resolveSibling(database.getFileName() + "-wal"));
+        disk.deleteIfExists(database.resolveSibling(database.getFileName() + "-shm"));
     }
 
     private void migrate(Path database) {
@@ -626,6 +684,27 @@ public final class BackupService {
             Files.deleteIfExists(file);
         } catch (IOException ignored) {
             // the scratch folder is cleaned at the next start
+        }
+    }
+
+    /**
+     * The disk operations of a restore that can fail for want of room or permission, as one seam so a test
+     * can make them fail. Everything else in this class uses {@link Files} directly.
+     */
+    interface Disk {
+        Disk REAL = new Disk() {};
+
+        default void move(Path from, Path to, CopyOption... options) throws IOException {
+            Files.move(from, to, options);
+        }
+
+        default void deleteIfExists(Path file) throws IOException {
+            Files.deleteIfExists(file);
+        }
+
+        /** Free space a new file in {@code folder}'s file store can use. */
+        default long usableSpace(Path folder) throws IOException {
+            return Files.getFileStore(folder).getUsableSpace();
         }
     }
 }

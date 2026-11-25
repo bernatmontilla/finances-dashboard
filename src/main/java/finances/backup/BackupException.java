@@ -33,7 +33,11 @@ public class BackupException extends RuntimeException {
         /** The target file of a command-line backup is already there. */
         TARGET_EXISTS,
         /** An earlier restore left the database it replaced aside; it is not overwritten. */
-        LEFTOVER;
+        LEFTOVER,
+        /** The free space of the data folder is below what restoring this backup needs. */
+        NOT_ENOUGH_SPACE,
+        /** A restore failed and the old database could not be moved back; it is kept aside as finances.replaced.db. */
+        OLD_DATABASE_ASIDE;
 
         public String messageKey() {
             return "backup.error." + name().toLowerCase(java.util.Locale.ROOT);

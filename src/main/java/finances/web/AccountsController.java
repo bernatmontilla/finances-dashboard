@@ -35,6 +35,7 @@ import org.springframework.web.server.ResponseStatusException;
 class AccountsController {
 
     private static final List<String> SCOPE_CODES = List.of("private", "business");
+    private static final List<String> SOURCE_CODES = List.of("manual", "csv");
     private static final List<String> KIND_CODES = List.of("current", "savings", "investment", "debt");
 
     private final AccountService accounts;
@@ -60,17 +61,18 @@ class AccountsController {
 
     @GetMapping("/accounts/new")
     String newForm(Model model) {
-        return accountForm(model, null, "", "private", "current", "");
+        return accountForm(model, null, "", "private", "current", "", "manual");
     }
 
     @PostMapping("/accounts")
     String create(@RequestParam(defaultValue = "") String name, @RequestParam(defaultValue = "") String scope,
-            @RequestParam(defaultValue = "") String kind, @RequestParam(defaultValue = "") String iban, Model model, HttpServletResponse response) {
+            @RequestParam(defaultValue = "") String kind, @RequestParam(defaultValue = "") String iban,
+            @RequestParam(defaultValue = "manual") String source, Model model, HttpServletResponse response) {
         try {
-            Account account = accounts.addManual(name, Scope.parse(scope), Kind.parse(kind), iban);
+            Account account = accounts.add(name, Scope.parse(scope), Kind.parse(kind), iban, Source.choose(source));
             return "redirect:/accounts/" + account.id();
         } catch (AccountException e) {
-            return refused(response, model, e, accountForm(model, null, name, scope, kind, iban));
+            return refused(response, model, e, accountForm(model, null, name, scope, kind, iban, source));
         }
     }
 
@@ -78,7 +80,7 @@ class AccountsController {
     String editForm(@PathVariable long id, Model model) {
         Account account = found(id);
         return accountForm(model, account, account.name(), account.scope().code(), account.kind().code(),
-                account.iban() == null ? "" : account.iban());
+                account.iban() == null ? "" : account.iban(), account.source().code());
     }
 
     @PostMapping("/accounts/{id}")
@@ -90,7 +92,7 @@ class AccountsController {
             accounts.update(id, name, Scope.parse(scope), Kind.parse(kind), iban);
             return "redirect:/accounts/" + id;
         } catch (AccountException e) {
-            return refused(response, model, e, accountForm(model, account, name, scope, kind, iban));
+            return refused(response, model, e, accountForm(model, account, name, scope, kind, iban, account.source().code()));
         }
     }
 
@@ -160,12 +162,14 @@ class AccountsController {
 
     // ----- pages
 
-    private String accountForm(Model model, Account account, String name, String scope, String kind, String iban) {
+    private String accountForm(Model model, Account account, String name, String scope, String kind, String iban, String source) {
         model.addAttribute("account", account);
         model.addAttribute("name", name);
         model.addAttribute("scope", scope);
         model.addAttribute("kind", kind);
         model.addAttribute("iban", iban);
+        model.addAttribute("source", source);
+        model.addAttribute("sources", SOURCE_CODES);
         model.addAttribute("scopes", SCOPE_CODES);
         model.addAttribute("kinds", KIND_CODES);
         return "account-form";
@@ -187,7 +191,9 @@ class AccountsController {
         model.addAttribute("kindKey", AccountViews.kindKey(account.kind()));
         model.addAttribute("sourceKey", "source." + account.source().code());
         model.addAttribute("debt", account.kind() == Kind.DEBT);
-        model.addAttribute("manual", account.source() == Source.MANUAL);
+        // Balances are typed in for an account that no bank feeds: a manual one or a CSV one.
+        model.addAttribute("manual", account.source() != Source.BANK);
+        model.addAttribute("csv", account.source() == Source.CSV);
         model.addAttribute("history", accounts.history(account.id()).stream()
                 .map(e -> new AccountViews.EntryRow(e.id(), AccountViews.balance(e, today)))
                 .toList());

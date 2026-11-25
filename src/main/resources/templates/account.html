@@ -28,6 +28,8 @@
       </form>
     </div>
 
+    <p th:if="${csv and !account.archived}"><a class="button" th:href="@{/accounts/{id}/import(id=${account.id})}" th:text="#{import.start}"></a></p>
+
     <h2 th:text="#{balances.title}"></h2>
     <p th:replace="~{fragments :: error}"></p>
     <th:block th:if="${manual and !account.archived}">

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title th:text="#{import.title}"></title>
+  <link rel="stylesheet" th:href="@{/app.css}">
+</head>
+<body>
+  <main>
+    <nav th:replace="~{fragments :: nav}"></nav>
+    <h1 th:text="#{import.title}"></h1>
+    <p th:text="${account.name}"></p>
+    <p th:replace="~{fragments :: error}"></p>
+    <p class="muted" th:text="#{import.intro}"></p>
+    <form method="post" enctype="multipart/form-data" th:action="@{/accounts/{id}/import(id=${account.id})}">
+      <p>
+        <label for="file" th:text="#{import.field.file}"></label>
+        <input id="file" name="file" type="file" accept=".csv,.txt,text/csv,text/plain" required>
+      </p>
+      <p class="actions">
+        <button type="submit" th:text="#{import.upload}"></button>
+        <a th:href="@{/accounts/{id}(id=${account.id})}" th:text="#{account.cancel}"></a>
+      </p>
+    </form>
+  </main>
+</body>
+</html>

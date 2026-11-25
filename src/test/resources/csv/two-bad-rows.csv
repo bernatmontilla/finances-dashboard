@@ -1,0 +1,5 @@
+Date;Amount;Description
+01-06-2026;-10,00;ok one
+31-02-2026;-10,00;bad date
+02-06-2026;1,234;ambiguous amount
+03-06-2026;-5,50;ok two

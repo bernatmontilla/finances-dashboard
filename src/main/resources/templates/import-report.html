@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title th:text="#{import.report.title}"></title>
+  <link rel="stylesheet" th:href="@{/app.css}">
+</head>
+<body>
+  <main>
+    <nav th:replace="~{fragments :: nav}"></nav>
+    <h1 th:text="#{import.report.title}"></h1>
+    <p th:text="${view.account.name}"></p>
+    <p th:if="${view.report.noRows()}" class="notice" th:text="#{import.report.noRows}"></p>
+    <p th:if="${view.report.everyRowFailed()}" class="error" role="alert" th:text="#{import.report.everyRowFailed}"></p>
+    <ul class="list" th:unless="${view.report.noRows()}">
+      <li th:text="#{import.report.added(${view.report.added})}"></li>
+      <li th:text="#{import.report.updated(${view.report.updated})}"></li>
+      <li th:text="#{import.report.known(${view.report.known})}"></li>
+      <li th:text="#{import.report.refused(${view.report.refused})}"></li>
+    </ul>
+    <p th:if="${view.hasBalanceResult()}" th:text="#{${view.balanceKey}}"></p>
+    <th:block th:if="${view.hasRefused()}">
+      <h2 th:text="#{import.report.refusedRows}"></h2>
+      <ul class="list">
+        <li th:each="r : ${view.refused}">
+          <span th:text="#{import.refusedRow(${r.row})}"></span>
+          <span th:text="#{${r.reasonKey}}"></span>
+        </li>
+      </ul>
+      <p th:if="${view.hasMoreRefused()}" class="muted" th:text="#{import.moreRefused}"></p>
+    </th:block>
+    <p class="actions">
+      <a class="button" th:href="@{/accounts/{id}(id=${view.account.id})}" th:text="#{import.report.back}"></a>
+      <a th:href="@{/accounts/{id}/import(id=${view.account.id})}" th:text="#{import.another}"></a>
+    </p>
+  </main>
+</body>
+</html>

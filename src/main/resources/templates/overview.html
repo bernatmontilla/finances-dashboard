@@ -9,10 +9,24 @@
 </head>
 <body>
   <main>
+    <nav th:replace="~{fragments :: nav}"></nav>
     <h1 th:text="#{app.name}"></h1>
     <p class="muted" th:text="#{overview.version(${version})}"></p>
     <h2 th:text="#{overview.title}"></h2>
-    <p th:text="#{overview.noAccounts}"></p>
+    <th:block th:if="${groups.empty}">
+      <p th:text="#{overview.noAccounts}"></p>
+      <p><a class="button" th:href="@{/accounts/new}" th:text="#{overview.addAccount}"></a></p>
+    </th:block>
+    <section th:each="group : ${groups}">
+      <h3 th:text="#{${group.labelKey}}"></h3>
+      <ul class="list">
+        <li th:each="row : ${group.rows}">
+          <a th:href="@{/accounts/{id}(id=${row.id})}" th:text="${row.name}"></a>
+          <span class="muted" th:text="#{${row.kindKey}}"></span>
+          <span th:replace="~{fragments :: balance(${row.balance}, ${row.debt})}"></span>
+        </li>
+      </ul>
+    </section>
   </main>
 </body>
 </html>

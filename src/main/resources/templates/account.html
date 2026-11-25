@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title th:text="${account.name}"></title>
+  <link rel="stylesheet" th:href="@{/app.css}">
+</head>
+<body>
+  <main>
+    <nav th:replace="~{fragments :: nav}"></nav>
+    <h1 th:text="${account.name}"></h1>
+    <p>
+      <span th:text="#{${scopeKey}}"></span>
+      <span class="muted" th:text="#{${kindKey}}"></span>
+      <span class="muted" th:text="#{${sourceKey}}"></span>
+      <span class="muted" th:if="${account.iban != null}" th:text="${account.iban}"></span>
+    </p>
+    <p th:if="${account.archived}" class="notice" th:text="#{account.archivedNotice}"></p>
+    <div class="actions">
+      <a class="button" th:href="@{/accounts/{id}/edit(id=${account.id})}" th:text="#{account.edit}"></a>
+      <form th:if="${!account.archived}" method="post" th:action="@{/accounts/{id}/archive(id=${account.id})}" class="inline">
+        <button type="submit" class="secondary" th:text="#{account.archive}"></button>
+      </form>
+      <form th:if="${account.archived}" method="post" th:action="@{/accounts/{id}/restore(id=${account.id})}" class="inline">
+        <button type="submit" th:text="#{accounts.restore}"></button>
+      </form>
+    </div>
+
+    <h2 th:text="#{balances.title}"></h2>
+    <p th:replace="~{fragments :: error}"></p>
+    <th:block th:if="${manual and !account.archived}">
+      <form method="post" th:action="@{/accounts/{id}/balances(id=${account.id})}">
+        <p th:if="${debt}" class="muted" th:text="#{account.debtHint}"></p>
+        <p>
+          <label for="amount" th:text="#{balances.field.amount}"></label>
+          <input id="amount" name="amount" type="text" inputmode="decimal" autocomplete="off" required th:value="${amount}">
+        </p>
+        <p>
+          <label for="date" th:text="#{balances.field.date}"></label>
+          <input id="date" name="date" type="date" required th:value="${date}" th:max="${today}">
+        </p>
+        <p><button type="submit" th:text="#{balances.add}"></button></p>
+      </form>
+    </th:block>
+    <p th:if="${!manual}" class="muted" th:text="#{balances.notManual}"></p>
+    <p th:if="${manual and account.archived}" class="muted" th:text="#{balances.archived}"></p>
+
+    <p th:if="${history.empty}" th:text="#{balances.none}"></p>
+    <ul class="list" th:unless="${history.empty}">
+      <li th:each="entry : ${history}">
+        <span th:replace="~{fragments :: balance(${entry.balance}, ${debt})}"></span>
+        <a th:if="${manual and !account.archived}" th:href="@{/accounts/{id}/balances/{entry}/edit(id=${account.id}, entry=${entry.id})}" th:text="#{balances.edit}"></a>
+      </li>
+    </ul>
+  </main>
+</body>
+</html>

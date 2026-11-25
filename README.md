@@ -27,6 +27,12 @@ a private network is the installer's job.
 | `finances.data-dir` (or the environment variable `FINANCES_DATA_DIR`) | **Required.** The folder that holds the database. Starting without it, or twice on the same folder, fails with a clear message. |
 | `server.port` (or `SERVER_PORT`) | The port, default `8080`. |
 
+Open *Accounts* to add an account (a name, a scope `private` or `business`, a kind `current`,
+`savings`, `investment` or `debt`, and an optional IBAN) and to type in its balance with the date it
+is from. Every balance is kept: the account page shows the history, newest first. Amounts can be
+typed as `1234,56`, `1.234,56` or `1234.56`; `1,234` is refused because it is not clear what it means.
+An account is archived, never deleted.
+
 `GET /health` answers `200` with `{"status":"ok","version":"…"}` when the database is reachable, and `503` with `{"status":"unavailable","version":"…"}` otherwise.
 
 One test class while working: `./mvnw -q test -Dtest=ClassName`.

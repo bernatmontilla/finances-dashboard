@@ -516,6 +516,9 @@ class CsvImportServiceTest {
         CsvMapping.Builder otherDate = saved.toBuilder();
         otherDate.dateFormat = "MM/dd/yyyy";
         changes.add(otherDate.build());
+        CsvMapping.Builder otherDecimal = saved.toBuilder();
+        otherDecimal.decimal = '.';
+        changes.add(otherDecimal.build());
         CsvMapping.Builder otherEncoding = saved.toBuilder();
         otherEncoding.encoding = CsvMapping.UTF_8;
         changes.add(otherEncoding.build());

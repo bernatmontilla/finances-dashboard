@@ -108,7 +108,7 @@ class ImportController {
             CsvMapping mapping = ImportViews.mapping(form);
             ParsedFile parsed = importing.preview(id, bytes, mapping); // the one full read of this request
             try {
-                ImportReport report = importing.importParsed(id, parsed, mapping, "true".equals(form.get("confirmDuplicates")));
+                ImportReport report = importing.importParsed(id, parsed, mapping, ImportViews.confirmKey(mapping).equals(form.get("confirmDuplicates")));
                 uploads.drop(token); // the file does not outlive the import
                 model.addAttribute("view", ImportViews.report(account, report));
                 return "import-report";

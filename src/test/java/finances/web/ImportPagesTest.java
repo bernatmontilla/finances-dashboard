@@ -291,7 +291,15 @@ class ImportPagesTest {
         assertThat(refused.statusCode()).isEqualTo(400);
         assertThat(refused.body()).contains("Nothing was imported.").contains(TWICE).contains("id=\"confirmDuplicates\"");
 
-        changed.put("confirmDuplicates", "true");
+        // The tick stands for the mapping that was warned about: another mapping needs its own tick.
+        Matcher key = Pattern.compile("id=\"confirmDuplicates\" name=\"confirmDuplicates\" type=\"checkbox\" value=\"([0-9a-f]+)\"").matcher(warned.body());
+        assertThat(key.find()).isTrue();
+        Map<String, String> other = new LinkedHashMap<>(changed);
+        other.put("confirmDuplicates", key.group(1));
+        other.put("name", "-1");
+        assertThat(post("/accounts/" + id + "/import/confirm", other).statusCode()).isEqualTo(400);
+
+        changed.put("confirmDuplicates", key.group(1));
         HttpResponse<String> report = post("/accounts/" + id + "/import/confirm", changed);
         assertThat(report.statusCode()).isEqualTo(200);
         assertThat(report.body()).contains("Import report").doesNotContain("Added: 0");

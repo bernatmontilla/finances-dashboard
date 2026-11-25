@@ -148,7 +148,7 @@ public class CsvImportService {
         return a.reference() == b.reference() && a.name() == b.name() && a.iban() == b.iban()
                 && a.description() == b.description() && a.amount() == b.amount() && a.debit() == b.debit()
                 && a.credit() == b.credit() && a.date() == b.date() && a.dateFormat().equals(b.dateFormat())
-                && a.encoding().equals(b.encoding());
+                && a.encoding().equals(b.encoding()) && a.decimal() == b.decimal();
     }
 
     /**

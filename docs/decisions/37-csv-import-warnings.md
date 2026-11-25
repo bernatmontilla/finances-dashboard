@@ -5,8 +5,8 @@ identity rule do not change; only `finances.importing`, the import pages, their 
 
 - **Changed mapping** (`CsvImportService.check`): compared with the mapping saved for the account, these fields
   feed an identity and count: reference, counterparty name, counterparty IBAN, description, the amount, debit and
-  credit columns, the date column, its format and the encoding. Delimiter, header row, decimal separator and the
-  balance column do not (a changed delimiter shifts every column number, so the columns differ anyway). When one
+  credit columns, the date column, its format, the decimal separator ("1.000" is 1.00 or 1000.00) and the encoding. Delimiter, header
+  row and the balance column do not (a changed delimiter shifts every column number, so the columns differ anyway). When one
   differs and the account holds transactions with a booking date from the oldest to the newest date of the *readable*
   rows of the file, the preview says so with that count and the import needs `confirmDuplicates`. The count is of
   stored transactions in the range, not of rows that would really be duplicated: the stored ones are not compared
@@ -14,6 +14,11 @@ identity rule do not change; only `finances.importing`, the import pages, their 
 - **Refused without the box**: `importFile(..., confirmed=false)` and `importParsed` throw
   `CsvImportException.CONFIRMATION_REQUIRED` before anything is stored, the mapping is not saved, and the page shows
   the preview again (400) with the warning and the box. The three-argument `importFile` stays and does not confirm.
+- **The tick belongs to one mapping**: the checkbox value is a key of the mapping that was warned about
+  (`ImportViews.confirmKey`); the confirm accepts it only for that same mapping, so changing a column after
+  ticking and pressing Import without updating the preview is refused and shown again. The risk-checker found this
+  gap; it also thought the decimal separator need not count (a wrong separator is mostly refused, not misread),
+  the reviewer thought it should; it counts, the cost being one extra tick.
 - **Only positive amounts**: one amount column, no debit or credit column, at least one readable row, none negative,
   account kind `current`. A warning only. Savings, investment and debt accounts do not get it (money in is the
   normal direction there).

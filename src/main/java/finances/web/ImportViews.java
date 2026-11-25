@@ -37,7 +37,12 @@ final class ImportViews {
     record Preview(Account account, String token, String delimiter, String encoding, boolean header, String dateFormat,
             String decimal, List<Field> fields, int columns, List<String> headers, List<List<String>> rows, boolean complete,
             int read, int importable, int refusedCount, List<Refused> refused, String balance, String balanceDate,
-            boolean balanceUndeterminable, int storedInRange, boolean allIncoming) {
+            boolean balanceUndeterminable, int storedInRange, boolean allIncoming, CsvMapping mapping) {
+
+        /** What the ticked box stands for: the mapping that was warned about, so another one needs its own tick. */
+        public String confirmKey() {
+            return ImportViews.confirmKey(mapping);
+        }
 
         /** The rows may be stored a second time: the page asks for a confirmation. */
         public boolean needsConfirmation() {
@@ -70,6 +75,11 @@ final class ImportViews {
         public boolean hasMoreRefused() {
             return report.refused() > refused.size();
         }
+    }
+
+    /** A value that is the same for the same mapping only (a consistency check, not a secret). */
+    static String confirmKey(CsvMapping mapping) {
+        return Integer.toHexString(mapping.toText().hashCode());
     }
 
     static String delimiterCode(char delimiter) {
@@ -173,7 +183,7 @@ final class ImportViews {
         }
         return new Preview(account, token, delimiterCode(m.delimiter()), encodingCode(m.encoding()), m.header(), m.dateFormat(),
                 decimalCode(m.decimal()), fields, columns, headers, rows, parsed != null, read, importable, refusedCount, refused,
-                balance, balanceDate, undeterminable, check.storedInRange(), check.allIncoming());
+                balance, balanceDate, undeterminable, check.storedInRange(), check.allIncoming(), m);
     }
 
     static Refused refused(RefusedRow row) {

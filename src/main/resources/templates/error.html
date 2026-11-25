@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title th:text="#{error.page.title}"></title>
+  <link rel="stylesheet" th:href="@{/app.css}">
+</head>
+<body>
+  <main>
+    <nav th:replace="~{fragments :: nav}"></nav>
+    <h1 th:text="#{error.page.title}"></h1>
+    <p th:text="#{error.page.text}"></p>
+    <p><a th:href="@{/accounts}" th:text="#{error.page.back}"></a></p>
+  </main>
+</body>
+</html>

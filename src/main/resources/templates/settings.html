@@ -15,6 +15,47 @@
     <p th:if="${notice != null}" class="notice" role="status" th:text="#{${notice}}"></p>
 
     <section>
+      <h2 th:text="#{bank.title}"></h2>
+      <p th:text="#{bank.intro}"></p>
+      <p th:if="${bank.configured}" th:text="#{bank.configured}"></p>
+      <p th:unless="${bank.configured}" class="notice" th:text="#{bank.notConfigured}"></p>
+      <p th:if="${bank.configured and !bank.redirectConfigured}" class="notice" th:text="#{bank.noRedirect}"></p>
+
+      <h3 th:text="#{bank.consents}"></h3>
+      <p th:unless="${bank.hasConsents()}" class="muted" th:text="#{bank.noConsents}"></p>
+      <ul class="list" th:if="${bank.hasConsents()}">
+        <li th:each="row : ${bank.consents}" class="bank-row">
+          <a th:href="@{/settings/bank/consents/{id}(id=${row.id})}" th:text="${row.bankName}"></a>
+          <span class="muted" th:text="#{bank.consents.accounts(${row.linked})}"></span>
+          <span th:if="${row.waiting gt 0}" class="muted" th:text="#{bank.consents.waiting(${row.waiting})}"></span>
+          <span th:if="${!row.ended}" class="muted nowrap" th:text="#{bank.consent.validUntil(${row.validUntil})}"></span>
+          <strong th:if="${row.ended}" class="error" th:text="#{bank.consent.expiredShort}"></strong>
+          <form th:if="${row.ended}" method="post" class="inline" th:action="@{/settings/bank/consents/{id}/renew(id=${row.id})}">
+            <button type="submit" class="secondary" th:text="#{bank.renew}"></button>
+          </form>
+        </li>
+      </ul>
+      <p th:if="${bank.configured and bank.redirectConfigured}">
+        <a class="button" th:href="@{/settings/bank/link}" th:text="#{bank.link}"></a>
+      </p>
+
+      <h3 th:text="#{bank.runs}"></h3>
+      <p th:unless="${bank.hasRuns()}" class="muted" th:text="#{bank.noRuns}"></p>
+      <ul class="list runs" th:if="${bank.hasRuns()}">
+        <li th:each="run : ${bank.runs}" class="bank-row">
+          <span class="muted" th:text="${run.when}"></span>
+          <a th:href="@{/accounts/{id}(id=${run.accountId})}" th:text="${run.accountName}"></a>
+          <span class="muted" th:text="#{${run.triggerKey}}"></span>
+          <strong th:if="${run.ok}" th:text="#{bank.run.ok}"></strong>
+          <strong th:unless="${run.ok}" class="error" th:text="#{bank.run.failed(#{${run.reasonKey}})}"></strong>
+          <span th:if="${run.ok}" class="muted" th:text="#{bank.run.counts(${run.added}, ${run.updated}, ${run.known}, ${run.refused})}"></span>
+          <span th:if="${run.ok and (run.pendingRemoved gt 0 or run.pendingKept gt 0)}" class="muted"
+                th:text="#{bank.run.pending(${run.pendingRemoved}, ${run.pendingKept})}"></span>
+        </li>
+      </ul>
+    </section>
+
+    <section>
       <h2 th:text="#{backup.title}"></h2>
       <p th:text="#{backup.intro}"></p>
       <p class="notice" th:text="#{backup.secrets}"></p>

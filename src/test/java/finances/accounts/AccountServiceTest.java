@@ -269,4 +269,50 @@ class AccountServiceTest {
                 .isInstanceOf(AccountException.class)
                 .satisfies(e -> assertThat(((AccountException) e).reason()).isEqualTo(reason));
     }
+
+    // ----- balances from a bank (issue #10)
+
+    @Test
+    void aBankBalanceKeepsItsSignOnACurrentAccountAndIsTheAmountOwedOnADebt() {
+        Account current = accounts.addFromBank("Everyday", Scope.PRIVATE, Kind.CURRENT, PRIVATE_IBAN);
+        Account loan = accounts.addFromBank("Loan", Scope.PRIVATE, Kind.DEBT, null);
+        Instant at = Instant.parse("2026-06-15T08:00:00Z");
+
+        accounts.addBankBalance(current.id(), Money.eur(-12345), TODAY, "CLBD", at, AsOfBasis.BANK_TIME);
+        accounts.addBankBalance(loan.id(), Money.eur(-500000), TODAY, "CLBD", at, AsOfBasis.BANK_TIME);
+
+        assertThat(accounts.latestBankBalance(current.id()).orElseThrow().amount()).isEqualTo(Money.eur(-12345));
+        assertThat(accounts.latestBankBalance(loan.id()).orElseThrow().amount()).as("owed, not negative").isEqualTo(Money.eur(500000));
+        assertThat(accounts.get(current.id()).source()).isEqualTo(Source.BANK);
+    }
+
+    @Test
+    void theSameBankBalanceIsNotStoredTwiceButAFetchedOneAlwaysIsAndManualBalancesAreUntouched() {
+        Account account = accounts.addFromBank("Everyday", Scope.PRIVATE, Kind.CURRENT, PRIVATE_IBAN);
+        Instant at = Instant.parse("2026-06-15T08:00:00Z");
+
+        assertThat(accounts.addBankBalance(account.id(), Money.eur(1000), TODAY, "CLBD", at, AsOfBasis.BANK_TIME)).isTrue();
+        assertThat(accounts.addBankBalance(account.id(), Money.eur(1000), TODAY, "CLBD", at, AsOfBasis.BANK_TIME)).isFalse();
+        assertThat(accounts.addBankBalance(account.id(), Money.eur(1000), TODAY, "CLBD", at.plusSeconds(60), AsOfBasis.BANK_TIME)).isTrue();
+        assertThat(accounts.addBankBalance(account.id(), Money.eur(1000), TODAY, "CLBD", at, AsOfBasis.FETCHED)).isTrue();
+        assertThat(accounts.addBankBalance(account.id(), Money.eur(1000), TODAY, "CLBD", at, AsOfBasis.FETCHED)).isTrue();
+        assertThat(accounts.latestBankBalance(account.id()).orElseThrow().basis()).isEqualTo(AsOfBasis.FETCHED);
+
+        Account manual = accounts.addManual("By hand", Scope.PRIVATE, Kind.SAVINGS, null);
+        accounts.addBalance(manual.id(), Money.eur(5), TODAY);
+        assertThat(accounts.latestBankBalance(manual.id())).as("a manual balance has no bank type").isEmpty();
+        assertThat(accounts.history(manual.id())).singleElement().satisfies(e -> assertThat(e.amount()).isEqualTo(Money.eur(5)));
+    }
+
+    @Test
+    void anAccountThatAlreadyHasABankLinkCannotBeAttachedAgainAndUnlinkingMakesItManual() {
+        Account account = accounts.addManual("Everyday", Scope.PRIVATE, Kind.CURRENT, null);
+
+        accounts.attachToBank(account.id());
+        assertThatThrownBy(() -> accounts.attachToBank(account.id()))
+                .satisfies(e -> assertThat(((AccountException) e).reason()).isEqualTo(Reason.ALREADY_BANK));
+        accounts.detachFromBank(account.id());
+
+        assertThat(accounts.get(account.id()).source()).isEqualTo(Source.MANUAL);
+    }
 }

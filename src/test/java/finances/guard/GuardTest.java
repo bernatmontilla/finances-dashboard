@@ -135,6 +135,52 @@ class GuardTest {
     }
 
     @Test
+    void noCodeCanStartAPaymentOrAskForAPaymentScope() throws IOException {
+        // Issue #10, hard rule 6: the app is read only. No string in the main code names a payment endpoint or
+        // field, and the pages show no bank logo (hard rule 7: nothing is loaded from another host).
+        Pattern payment = Pattern.compile("\"[^\"]*(?:payment|pisp)[^\"]*\"", Pattern.CASE_INSENSITIVE);
+        List<String> found = new ArrayList<>();
+        for (Path file : files(MAIN.resolve("java"))) {
+            List<String> lines = Files.readAllLines(file);
+            for (int i = 0; i < lines.size(); i++) {
+                if (payment.matcher(lines.get(i)).find()) {
+                    found.add(file + ":" + (i + 1) + ": " + lines.get(i).strip());
+                }
+            }
+        }
+        for (Path file : files(TEMPLATES)) {
+            if (Files.readString(file).toLowerCase(java.util.Locale.ROOT).contains("<img")) {
+                found.add(file + ": an image tag (bank logos are on another host)");
+            }
+        }
+        assertThat(found).as("no payment code, no image from another host").isEmpty();
+    }
+
+    @Test
+    void theBankCodeNeverPassesAnExceptionToALoggerOrPrints() throws IOException {
+        // Issue #10, hard rule 11: an exception from the network or the database can quote an address, a name or
+        // a value. The sync, link and outbound code log counts and the exception's class name only.
+        Pattern output = Pattern.compile("System\\.(out|err)|printStackTrace|\\bLOG\\.\\w+\\([^;]*,\\s*(e|ex|exception|cause)\\s*\\)");
+        List<String> found = new ArrayList<>();
+        List<Path> code = new ArrayList<>(files(MAIN.resolve("java/finances/sync")));
+        code.addAll(files(MAIN.resolve("java/finances/outbound")));
+        code.add(MAIN.resolve("java/finances/web/BankController.java"));
+        code.add(MAIN.resolve("java/finances/web/BankViews.java"));
+        for (Path file : code) {
+            if (!file.toString().endsWith(".java")) {
+                continue;
+            }
+            List<String> lines = Files.readAllLines(file);
+            for (int i = 0; i < lines.size(); i++) {
+                if (output.matcher(lines.get(i)).find()) {
+                    found.add(file + ":" + (i + 1) + ": " + lines.get(i).strip());
+                }
+            }
+        }
+        assertThat(found).as("no exception object in a log call, no printing").isEmpty();
+    }
+
+    @Test
     void noFileHoldsAFixedDataFolderOutsideTheBuild() throws IOException {
         Pattern fixed = Pattern.compile("finances\\.data-dir\\s*[=:]\\s*\\S");
         List<String> found = new ArrayList<>();

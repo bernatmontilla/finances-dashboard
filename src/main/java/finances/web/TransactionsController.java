@@ -25,7 +25,7 @@ class TransactionsController {
         LocalDate today = accounts.today();
         model.addAttribute("transactions", TransactionViews.page(transactions.all(TransactionViews.pageNumber(page))));
         model.addAttribute("transactionsPath", "/transactions");
-        model.addAttribute("groups", AccountViews.groups(accounts.list(false), today, transactions.lastDelivered(), transactions.zone()));
+        model.addAttribute("groups", AccountViews.groups(accounts.list(false), today, transactions.lastDelivered(), transactions.zone(), accounts.latestBankBalances()));
         return "transactions";
     }
 }

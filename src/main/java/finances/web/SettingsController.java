@@ -4,6 +4,9 @@ import finances.backup.BackupException;
 import finances.backup.BackupService;
 import finances.backup.PreparedBackup;
 import finances.backup.RestorePlan;
+import finances.outbound.BankApiException;
+import finances.sync.BankStatus;
+import finances.sync.LinkException;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.InputStream;
@@ -33,26 +36,56 @@ class SettingsController {
     private static final DateTimeFormatter MOMENT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     private final BackupService backups;
+    private final BankStatus bank;
     private final Clock clock;
 
-    SettingsController(BackupService backups, Clock clock) {
+    SettingsController(BackupService backups, BankStatus bank, Clock clock) {
         this.backups = backups;
+        this.bank = bank;
         this.clock = clock;
     }
 
     @GetMapping("/settings")
-    String settings(@RequestParam(required = false) String done, @RequestParam(required = false) String failed, Model model) {
+    String settings(@RequestParam(required = false) String done, @RequestParam(required = false) String failed,
+            @RequestParam(required = false) String bank, @RequestParam(required = false) String bankFailed, Model model) {
         String notice = done == null ? null : "backup.done." + (done.equals("undone") ? "undone" : "restored");
+        if (bank != null) {
+            notice = switch (bank) {
+                case "empty" -> "bank.notice.empty";
+                case "unlinked" -> "bank.notice.unlinked";
+                default -> notice;
+            };
+        }
         String error = null;
         for (BackupException.Reason reason : BackupException.Reason.values()) {
             if (reason.name().equalsIgnoreCase(failed)) {
                 error = reason.messageKey();
             }
         }
+        error = bankError(bankFailed, error);
         return settingsPage(model, notice, error);
     }
 
+    /** Only a reason this application names becomes a message: whatever else is in the address is ignored. */
+    private static String bankError(String code, String otherwise) {
+        if (code == null) {
+            return otherwise;
+        }
+        for (LinkException.Reason reason : LinkException.Reason.values()) {
+            if (reason != LinkException.Reason.BANK_API && reason.name().equalsIgnoreCase(code)) {
+                return "bank.error." + reason.name().toLowerCase(Locale.ROOT);
+            }
+        }
+        for (BankApiException.Reason reason : BankApiException.Reason.values()) {
+            if (("api_" + reason.name()).equalsIgnoreCase(code)) {
+                return "bank.error.api." + reason.name().toLowerCase(Locale.ROOT);
+            }
+        }
+        return otherwise;
+    }
+
     private String settingsPage(Model model, String notice, String error) {
+        model.addAttribute("bank", BankViews.settings(bank, clock.getZone()));
         model.addAttribute("hasPrevious", backups.hasPrevious());
         model.addAttribute("previousFrom", backups.previousFrom().map(this::moment).orElse(""));
         model.addAttribute("undoWord", BackupService.UNDO_WORD);

@@ -18,8 +18,12 @@ mention the test here.
   row that cannot be read is refused with a reason and the row number, never repaired. An export in
   Windows-1252 must not sit in `src/test/resources` (the guard tests read every file there as UTF-8):
   build such bytes in `CsvFixtures`. A `>` inside a Thymeleaf attribute breaks the text guard: write `gt`.
-- A bank that books a pending item under another date and gives no reference twice is stored twice:
-  the fingerprint includes the booking date (`docs/decisions/8-transactions-store.md`).
+- A pending item that the bank books under another date **and gives no reference for the booked one** is
+  stored twice: without a reference the fingerprint includes the booking date. With a reference the booked
+  one takes over the matching pending row (same amount, counterparty, description, at most 7 days earlier):
+  `docs/decisions/8-transactions-store.md`, `10-bank-sync.md`.
+- Only the bank sync deletes a transaction, and only a pending one of source bank that a complete fetch did not
+  report (`TransactionService.deliverFromBank`); never call it after a failed or partial fetch.
 
 - Backup and restore: `VACUUM INTO` is the consistent snapshot while the app writes (never copy `finances.db`
   while it runs: the WAL file holds committed data). A restore replaces the file, so every open connection
@@ -51,6 +55,16 @@ mention the test here.
   transactions page can still carry a `continuation_key`, and the other parameters must stay equal.
 - `POST /sessions` returns account details only once; store IBAN, name and currency then.
 - The bank list returns logo URLs on another host; never load them in a page (hard rule 7).
+- Secrets are files in `<data>/secrets/` (application id, key, one session file per consent), never in the
+  database or a backup. A consent row without its session file means "restored on another machine": it is
+  treated as expired. A new secret file goes in the table of `docs/install.md`.
+- A sync fetches everything first and stores in one short transaction: never a database transaction open
+  during a request to the bank, never a partly stored fetch. A transaction that cannot be read fails the whole
+  fetch (otherwise a pending row that was not delivered would be removed).
+- The Enable Banking `state` of a link attempt is kept in memory only: a restart in the middle of a link
+  abandons it (nothing was stored). The callback is the one GET that stores something.
+- A migration changes "database version" in two existing tests (`SettingsBackupPagesTest`, `BackupServiceTest`);
+  update the number there when you add one.
 
 ## The target machine
 

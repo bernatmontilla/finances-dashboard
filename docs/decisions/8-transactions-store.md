@@ -18,17 +18,26 @@
   - Fingerprint = SHA-256 of booking date, cents, counterparty and description, the two texts trimmed,
     white space collapsed and lower-cased. The counterparty IBAN is not part of it (spec).
 - **Pending then booked**: a booked transaction with a reference that is not known first looks for the
-  oldest pending one **with the same fingerprint, whether it has a reference of its own or not**, and
-  becomes it (status and reference are set; one row, counted as updated). Without a reference the
-  pending one is found by fingerprint directly. A booked row never goes back to pending, whatever a late
-  delivery says. A row that was claimed this way keeps its place among the identical ones
-  (`claimed_pending`), so pending deliveries of the siblings still left over line up with their own
-  rows whatever the order of the batch (a test covers both orders).
-- **Known limit, on purpose**: the fingerprint includes the booking date, so a pending transaction whose
-  bank later books it **under another date, without a reference both times**, is stored twice. Matching
-  across dates would guess. A pending item that is delivered again after its booked twin was stored
-  under a reference **with another reference than the pending one had** is stored as a new pending one;
-  real syncs do not return pending items that are booked.
+  oldest pending one of the account **with the same amount, counterparty and description (normalised)**,
+  dated on or before the booking date and at most `TransactionService.PENDING_TAKEOVER_DAYS` (7) days
+  before it, **whether it has a reference of its own or not**, and becomes it (status, date and
+  reference are set; one row, counted as updated). *Changed in #10* (`10-bank-sync.md`): this used to
+  need the same fingerprint, i.e. the same booking date. A pending row that the same batch delivered or
+  matched is never taken over, so an identical second purchase stays a second row. Without a reference
+  the pending one is found by fingerprint directly (date exact). A booked row never goes back to
+  pending, whatever a late delivery says. A row that was claimed this way keeps its place among the
+  identical ones (`claimed_pending`), so pending deliveries of the siblings still left over line up
+  with their own rows whatever the order of the batch (a test covers both orders).
+- **Known limit, on purpose**: a booked transaction **without a reference** is matched by its
+  fingerprint, which includes the booking date, so a pending one that is booked under another date
+  **without a reference both times** is stored twice (the takeover above needs a reference on the
+  booked one). *Changed in #10*: a booked delivery **with** a new reference no longer has this limit.
+  A pending item that is delivered again after its booked twin was stored under a reference **with
+  another reference than the pending one had** is stored as a new pending one; real syncs do not
+  return pending items that are booked.
+- **Pending rows the bank stops reporting (#10)**: `TransactionService.deliverFromBank`, used only by
+  the bank sync, removes (no note) or keeps and marks (`no_longer_reported_at`, with a note) the
+  pending bank rows a complete fetch did not mention. `deliver` still never deletes.
 - **A pending delivery never touches a booked row** (it only bumps `last_seen_at`), and a delivery
   without a reference never erases the reference a row has.
 - **One source per account**: a delivery without a reference matches rows without one (and claimed

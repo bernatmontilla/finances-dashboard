@@ -36,7 +36,7 @@
   machine (checked after deploy).
 - **Tests**: `scripts/dev/test-update.sh` (run by `scripts/dev/build.sh`) drives `update.sh` with a
   fake release folder, a fake `systemctl` and a fake health file through `file://` URLs and
-  `FINANCES_*` environment settings. `FINANCES_UID` exists only so the test can run as root in a
+  `FINANCES_*` environment settings. `FINANCES_UID` (test mode only, see the last section) exists so the test can run as root in a
   container and still show that uid 0 is refused. A guard test (`GuardTest`) rejects home paths,
   addresses and hosts other than the allowed ones in `deploy/`, `docs/install.md` and the test script.
 - **Not verified here**: `systemd-analyze verify --user` cannot start a user manager in the cloud
@@ -44,3 +44,34 @@
   installed `update.sh` does not exist in the sandbox.
 - **Known limit**: as in `arch-deploy.md`, the checksum protects against a broken download, not a
   compromised repository.
+
+## Hardening after the review in CI (issue #27)
+
+The review of PR 26 found ways to end on a failed service or on a silent "never updates". Changes,
+all inside `deploy/update.sh`, `scripts/dev/test-update.sh` and `docs/install.md`; the asset names,
+the folder layout and the existing exit codes are unchanged.
+
+- **Crash loop**: `restart()` runs `systemctl --user reset-failed` first (failure ignored), so
+  systemd's start limit cannot refuse the rollback's restart.
+- **Cut-off run**: with `pending-version` left behind the next run first probes the health once. If
+  the pending version is not reporting it restarts the service once, then waits as before. A
+  pending version that never reports is rolled back only when the jar differs from `previous.jar`
+  (`cmp -s`), or there is no jar at all (first installation); if they are the same file the swap never happened, so the marker is dropped, no
+  `failed-version` is written, and the run goes on with a normal update. The probe before the
+  restart (not in the spec's wording) keeps a service that already runs the pending version from
+  being restarted for nothing, and the existing "pending healthy: no restart" case unchanged.
+- **Missing tool**: `flock`, `curl` and `sha256sum` are checked up front, exit 1 naming the missing
+  one; `cmp` is checked too since the cut-off case depends on it. This is a new exit 1.
+- **Manual rollback** in `docs/install.md` copies to a temporary file in `app/` and `mv -f`s it over,
+  so the jar the JVM has open is replaced, not overwritten.
+- **Test-only switches**: `FINANCES_CURL_PROTO`, `FINANCES_UID` and `FINANCES_SYSTEMCTL` are read
+  only when `FINANCES_TEST=1`, which `scripts/dev/test-update.sh` sets; otherwise each one that is
+  set is named in a log line as ignored. This replaces the sentence above about `FINANCES_UID`.
+- **Rollback order**: `roll_back` removes `pending-version` only after the previous jar is back, so a
+  run cut off in between is settled again by the next one instead of leaving the bad jar in place
+  with the release marked as failed.
+- **Known limit**: the probe-then-restart of a pending version can restart a good release that is
+  still starting after a reboot (the timer has `RandomizedDelaySec`, so it rarely coincides). Not
+  changed here: the issue asks for the restart. `FINANCES_HEALTH_URL`, `FINANCES_RELEASE_API` and
+  `FINANCES_DOWNLOAD_BASE` are still honoured outside test mode; gating them is a possible follow-up.
+

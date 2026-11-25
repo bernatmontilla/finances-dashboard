@@ -12,7 +12,8 @@
 # A version that was rolled back is remembered in `failed-version` and not tried again until a newer
 # release appears.
 #
-# Plain bash with curl and sha256sum (flock from util-linux guards against two runs at once).
+# Plain bash with curl, sha256sum, cmp and flock (util-linux; guards against two runs at once); a
+# missing one is reported at once, exit 1, so an installation never silently stops updating.
 # Never runs as root. Exit 0 when there is nothing to do or nothing could be checked (no network,
 # rate limit): the timer tries again next day. Exit 1 when an update was refused or rolled back.
 #
@@ -24,28 +25,47 @@
 #   SERVER_PORT              the port the app listens on                  (default 8080)
 #   FINANCES_HEALTH_TIMEOUT  seconds to wait for the new version to answer (default 300)
 # The remaining FINANCES_* settings exist so that scripts/dev/test-update.sh can run this script
-# against a fake release directory and a fake health endpoint.
+# against a fake release directory and a fake health endpoint. Of them FINANCES_CURL_PROTO,
+# FINANCES_UID and FINANCES_SYSTEMCTL weaken a safety check or swap a program, so they are honoured
+# only when FINANCES_TEST=1 (otherwise they are ignored, and the log says so).
 set -euo pipefail
 
 APP_DIR="${FINANCES_APP_DIR:-$HOME/finances-dashboard/app}"
 REPO="${FINANCES_REPO:-}"
 SERVICE="${FINANCES_SERVICE:-finances-dashboard.service}"
-SYSTEMCTL="${FINANCES_SYSTEMCTL:-systemctl}"
-CURL_PROTO="${FINANCES_CURL_PROTO:-=https}"
 HEALTH_URL="${FINANCES_HEALTH_URL:-http://127.0.0.1:${SERVER_PORT:-8080}/health}"
 HEALTH_TIMEOUT="${FINANCES_HEALTH_TIMEOUT:-300}"
 HEALTH_INTERVAL="${FINANCES_HEALTH_INTERVAL:-3}"
-CALLER_UID="${FINANCES_UID:-$(id -u)}"
 
 JAR=finances-dashboard.jar
 SUM=finances-dashboard.jar.sha256
 
 log() { printf 'finances-dashboard-update: %s\n' "$*"; }
 
+if [ "${FINANCES_TEST:-}" = 1 ]; then
+  SYSTEMCTL="${FINANCES_SYSTEMCTL:-systemctl}"
+  CURL_PROTO="${FINANCES_CURL_PROTO:-=https}"
+  CALLER_UID="${FINANCES_UID:-$(id -u)}"
+else
+  for setting in FINANCES_CURL_PROTO FINANCES_UID FINANCES_SYSTEMCTL; do
+    [ -z "${!setting:-}" ] || log "ignoring $setting: it is only honoured when FINANCES_TEST=1"
+  done
+  SYSTEMCTL=systemctl
+  CURL_PROTO==https
+  CALLER_UID=$(id -u)
+fi
+
 if [ "$CALLER_UID" -eq 0 ]; then
   log "refusing to run as root; run it as the user that owns the service"
   exit 1
 fi
+
+for tool in flock curl sha256sum cmp; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    log "required tool '$tool' is not installed; no update can run until it is (see docs/install.md)"
+    exit 1
+  fi
+done
 
 if [ -z "$REPO" ] && [ -z "${FINANCES_RELEASE_API:-}" ]; then
   log "FINANCES_REPO is not set (owner/name of the GitHub repository); see docs/install.md"
@@ -66,7 +86,7 @@ if ! flock -n 9; then
   exit 0
 fi
 
-# https only (also after a redirect); FINANCES_CURL_PROTO exists for the file:// test setup.
+# https only (also after a redirect); FINANCES_CURL_PROTO (test mode only) allows the file:// test setup.
 curl_get() {
   curl --fail --silent --show-error --location --proto "$CURL_PROTO" --proto-redir =https \
     --connect-timeout 20 --max-time 300 "$@"
@@ -76,10 +96,14 @@ work=
 cleanup() { [ -z "$work" ] || rm -rf -- "$work"; }
 trap cleanup EXIT
 
-restart() { "$SYSTEMCTL" --user restart "$SERVICE"; }
+# reset-failed first: after a crash loop systemd's start limit refuses a restart of a failed service.
+restart() {
+  "$SYSTEMCTL" --user reset-failed "$SERVICE" || true
+  "$SYSTEMCTL" --user restart "$SERVICE"
+}
 
-healthy() { # $1 = version that must be reported
-  deadline=$((SECONDS + HEALTH_TIMEOUT))
+healthy() { # $1 = version that must be reported, $2 = seconds to wait (default HEALTH_TIMEOUT)
+  deadline=$((SECONDS + ${2:-$HEALTH_TIMEOUT}))
   while :; do
     if body=$(curl --fail --silent --max-time 5 "$HEALTH_URL" 2>/dev/null) &&
        printf '%s' "$body" | grep -Fq '"status":"ok"' &&
@@ -96,10 +120,10 @@ read_file() { [ -f "$APP_DIR/$1" ] && head -n 1 "$APP_DIR/$1" || true; }
 # Put the previous jar back (the installed version was never changed, so it still names it).
 roll_back() { # $1 = the version that failed
   printf '%s\n' "$1" > "$APP_DIR/failed-version"
-  rm -f -- "$APP_DIR/pending-version"
+  # The marker goes only after the jar is back: a run cut off in between is settled again next time.
   if [ -f "$APP_DIR/previous.jar" ]; then
     mv -f -- "$APP_DIR/previous.jar" "$APP_DIR/$JAR"
-    rm -f -- "$APP_DIR/previous-version"
+    rm -f -- "$APP_DIR/pending-version" "$APP_DIR/previous-version"
     log "put the previous jar back, restarting"
     restart || log "restart of the previous jar failed too; check the service logs"
     old=$(read_file installed-version)
@@ -109,17 +133,33 @@ roll_back() { # $1 = the version that failed
       log "rolled back, but the previous jar is not confirmed healthy; check the service logs"
     fi
   else
+    rm -f -- "$APP_DIR/pending-version"
     log "there was no previous jar to put back; check the service logs"
   fi
 }
 
-# A run that was cut off between the swap and the health check left a marker: settle it first.
+# A run that was cut off after the marker was written left it behind: settle it first. The cut can
+# have come before the swap (the service never ran the pending version), between the swap and the
+# restart (the service still runs the old jar), or after the restart. So: if the pending version is
+# not reporting yet, restart once (the new jar, if it is in place, starts now) and check again.
 pending=$(read_file pending-version)
 if [ -n "$pending" ]; then
+  if healthy "$pending" 0; then
+    :
+  else
+    log "an earlier update to $pending was never confirmed; restarting $SERVICE to check it"
+    restart || log "restart failed; check the service logs"
+  fi
   if healthy "$pending"; then
     printf '%s\n' "$pending" > "$APP_DIR/installed-version"
     rm -f -- "$APP_DIR/pending-version"
     log "an earlier update to $pending was never confirmed; it is healthy now, recorded as installed"
+  elif [ ! -f "$APP_DIR/$JAR" ] ||
+       { [ -f "$APP_DIR/previous.jar" ] && cmp -s -- "$APP_DIR/previous.jar" "$APP_DIR/$JAR"; }; then
+    # No jar yet (first installation) or still the previous one: the swap never happened, so $pending never ran and did not
+    # fail. Forget the marker and carry on with a normal update.
+    rm -f -- "$APP_DIR/pending-version"
+    log "an earlier update to $pending was cut off before the swap; nothing to roll back"
   else
     log "an earlier update to $pending was never confirmed and is not healthy"
     roll_back "$pending"

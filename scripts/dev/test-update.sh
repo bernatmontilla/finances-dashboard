@@ -22,6 +22,12 @@ check() { # description, then a command that must succeed
 cat > "$root/systemctl" <<'FAKE'
 #!/usr/bin/env bash
 echo "$*" >> "$FAKE_ROOT/systemctl.log"
+# FAKE_STRICT=1 imitates a service in systemd's start limit: restart is refused until reset-failed ran.
+if [ "$2" = reset-failed ]; then touch "$FAKE_ROOT/reset"; fi
+if [ "$2" = restart ] && [ "${FAKE_STRICT:-}" = 1 ]; then
+  [ -e "$FAKE_ROOT/reset" ] || { rm -f "$FAKE_ROOT/health.json"; exit 1; }
+  rm -f "$FAKE_ROOT/reset"
+fi
 if [ "$2" = restart ]; then
   jar="$FINANCES_APP_DIR/finances-dashboard.jar"
   if grep -q bad "$jar"; then
@@ -44,7 +50,7 @@ publish() { # tag, jar content ("1.2.0" or "1.2.0 bad"), [wrong checksum]
 }
 
 new_installation() { # [installed version]; the jar's first line is its version
-  rm -rf "$root/app" "$root/data" "$root/systemctl.log" "$root/health.json" "$root/releases" "$root/latest.json"
+  rm -rf "$root/app" "$root/data" "$root/systemctl.log" "$root/health.json" "$root/releases" "$root/latest.json" "$root/reset"
   mkdir -p "$root/app" "$root/data"
   printf 'owner entered this\n' > "$root/data/finances.db"
   if [ -n "${1:-}" ]; then
@@ -67,10 +73,20 @@ run_update() { # extra environment can be put in front by the caller via env
   FINANCES_HEALTH_TIMEOUT=2 FINANCES_HEALTH_INTERVAL=1 \
   FINANCES_UID=1000 \
   FINANCES_CURL_PROTO==file \
-  "$@" bash "$UPDATE" >"$root/out.log" 2>&1
+  FINANCES_TEST=1 \
+  "$@" "$BASH" "$UPDATE" >"$root/out.log" 2>&1
 }
 
 restarts() { grep -c ' restart ' "$root/systemctl.log" || true; }
+# A bin folder with the tools update.sh needs, except the ones named: for "a tool is missing" cases.
+path_without() {
+  rm -rf "$root/bin"; mkdir -p "$root/bin"
+  local t
+  for t in awk cat cmp cp curl cut dirname find flock grep head id mkdir mktemp mv rm sed sha256sum sleep sort tr; do
+    case " $* " in *" $t "*) continue ;; esac
+    ln -s "$(command -v "$t")" "$root/bin/$t"
+  done
+}
 jar_version() { head -n 1 "$root/app/finances-dashboard.jar"; }
 data_untouched() { [ "$(cd "$root/data" && sha256sum -- * | sha256sum)" = "$data_before" ]; }
 no_leftovers() { [ -z "$(find "$root/app" -maxdepth 1 -name '.update.*' ! -name '.update.lock')" ]; }
@@ -185,6 +201,65 @@ check "no repository: nothing changed" test "$(jar_version)" = 1.1.0 -a "$(resta
 new_installation 1.1.0; publish v1.2.0 1.2.0
 if run_update env FINANCES_UID=0; then fail "root: update.sh must refuse"; fi
 check "root: nothing changed" test "$(jar_version)" = 1.1.0 -a "$(restarts)" = 0
+
+# 12. A rollback after a crash loop: systemd refuses restart (start limit) until reset-failed ran,
+# so every restart the script makes is preceded by one.
+new_installation 1.1.0; publish v1.2.0 "1.2.0 bad"
+if run_update env FAKE_STRICT=1; then fail "start limit: update.sh must exit non-zero"; fi
+check "start limit: the previous jar is back" test "$(jar_version)" = 1.1.0
+check "start limit: the previous jar was restarted and reports healthy" grep -q '"version":"1.1.0"' "$root/health.json"
+check "start limit: reset-failed ran before each restart" test "$(grep -c ' reset-failed ' "$root/systemctl.log")" = 2
+
+# 13. A run cut off after pending-version was written, before the swap: jar and previous jar are the
+# same file, the service never ran the pending version. No rollback, no failure mark; the update runs.
+new_installation 1.1.0
+cp "$root/app/finances-dashboard.jar" "$root/app/previous.jar"
+printf '1.2.0\n' > "$root/app/pending-version"; printf '1.1.0\n' > "$root/app/previous-version"
+publish v1.2.0 1.2.0
+run_update env || fail "cut off before the swap: update.sh failed: $(cat "$root/out.log")"
+check "cut off before the swap: not marked as failed" test ! -e "$root/app/failed-version"
+check "cut off before the swap: the release was installed" test "$(jar_version)" = 1.2.0 -a "$(cat "$root/app/installed-version")" = 1.2.0
+check "cut off before the swap: nothing left pending" test ! -e "$root/app/pending-version"
+
+# 14. A run cut off after the swap, before the restart: the service still runs the old jar. The next
+# run restarts it once, and then the pending version reports healthy.
+new_installation 1.1.0
+printf '1.2.0\n' > "$root/app/finances-dashboard.jar"; printf '1.1.0\n' > "$root/app/previous.jar"
+printf '1.2.0\n' > "$root/app/pending-version"; printf '1.1.0\n' > "$root/app/previous-version"
+publish v1.2.0 1.2.0
+run_update env || fail "cut off before the restart: update.sh failed: $(cat "$root/out.log")"
+check "cut off before the restart: recorded as installed" test "$(cat "$root/app/installed-version")" = 1.2.0 -a ! -e "$root/app/pending-version"
+check "cut off before the restart: restarted once" test "$(restarts)" = 1
+check "cut off before the restart: not marked as failed" test ! -e "$root/app/failed-version"
+
+# 14b. A first installation cut off after the marker, before the swap: no jar at all. Same: no failure mark.
+new_installation; publish v1.2.0 1.2.0
+printf '1.2.0\n' > "$root/app/pending-version"
+run_update env || fail "first install cut off: update.sh failed: $(cat "$root/out.log")"
+check "first install cut off: not marked as failed" test ! -e "$root/app/failed-version"
+check "first install cut off: the release was installed" test "$(jar_version)" = 1.2.0
+
+# 15. A missing tool is reported, with exit 1, not mistaken for "another update is running".
+for tool in flock curl sha256sum cmp; do
+  new_installation 1.1.0; publish v1.2.0 1.2.0
+  path_without "$tool"
+  if run_update env PATH="$root/bin"; then fail "no $tool: update.sh must exit non-zero"; fi
+  check "no $tool: the message names it" grep -q "$tool" "$root/out.log"
+  check "no $tool: nothing changed" test "$(jar_version)" = 1.1.0 -a "$(restarts)" = 0
+done
+
+# 16. The test-only switches do nothing without FINANCES_TEST=1: a file:// source is refused, so
+# nothing is fetched, nothing swapped, and each ignored switch is named.
+new_installation 1.1.0; publish v1.2.0 1.2.0
+# The real service and systemctl must never be reachable from this case: a fake one is first on PATH.
+mkdir -p "$root/fakebin"; ln -sf "$root/systemctl" "$root/fakebin/systemctl"
+run_update env -u FINANCES_TEST PATH="$root/fakebin:$PATH" FINANCES_SERVICE=no-such-test.service || true
+check "no test mode: the file:// source was refused (or, as root, the run refused to start)" \
+  grep -Eq 'could not read the latest release|refusing to run as root' "$root/out.log"
+check "no test mode: nothing changed" test "$(jar_version)" = 1.1.0 -a "$(restarts)" = 0
+for var in FINANCES_CURL_PROTO FINANCES_UID FINANCES_SYSTEMCTL; do
+  check "no test mode: $var is named as ignored" grep -q "ignoring $var" "$root/out.log"
+done
 
 if [ "$failures" -ne 0 ]; then
   printf '%s check(s) of deploy/update.sh failed\n' "$failures"

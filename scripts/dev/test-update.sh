@@ -232,6 +232,13 @@ check "cut off before the restart: recorded as installed" test "$(cat "$root/app
 check "cut off before the restart: restarted once" test "$(restarts)" = 1
 check "cut off before the restart: not marked as failed" test ! -e "$root/app/failed-version"
 
+# 14b. A first installation cut off after the marker, before the swap: no jar at all. Same: no failure mark.
+new_installation; publish v1.2.0 1.2.0
+printf '1.2.0\n' > "$root/app/pending-version"
+run_update env || fail "first install cut off: update.sh failed: $(cat "$root/out.log")"
+check "first install cut off: not marked as failed" test ! -e "$root/app/failed-version"
+check "first install cut off: the release was installed" test "$(jar_version)" = 1.2.0
+
 # 15. A missing tool is reported, with exit 1, not mistaken for "another update is running".
 for tool in flock curl sha256sum; do
   new_installation 1.1.0; publish v1.2.0 1.2.0

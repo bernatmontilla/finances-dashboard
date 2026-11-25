@@ -36,7 +36,7 @@
   machine (checked after deploy).
 - **Tests**: `scripts/dev/test-update.sh` (run by `scripts/dev/build.sh`) drives `update.sh` with a
   fake release folder, a fake `systemctl` and a fake health file through `file://` URLs and
-  `FINANCES_*` environment settings. `FINANCES_UID` exists only so the test can run as root in a
+  `FINANCES_*` environment settings. `FINANCES_UID` (test mode only, see the last section) exists so the test can run as root in a
   container and still show that uid 0 is refused. A guard test (`GuardTest`) rejects home paths,
   addresses and hosts other than the allowed ones in `deploy/`, `docs/install.md` and the test script.
 - **Not verified here**: `systemd-analyze verify --user` cannot start a user manager in the cloud
@@ -56,7 +56,7 @@ the folder layout and the existing exit codes are unchanged.
 - **Cut-off run**: with `pending-version` left behind the next run first probes the health once. If
   the pending version is not reporting it restarts the service once, then waits as before. A
   pending version that never reports is rolled back only when the jar differs from `previous.jar`
-  (`cmp -s`); if they are the same file the swap never happened, so the marker is dropped, no
+  (`cmp -s`), or there is no jar at all (first installation); if they are the same file the swap never happened, so the marker is dropped, no
   `failed-version` is written, and the run goes on with a normal update. The probe before the
   restart (not in the spec's wording) keeps a service that already runs the pending version from
   being restarted for nothing, and the existing "pending healthy: no restart" case unchanged.

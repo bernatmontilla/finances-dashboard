@@ -153,8 +153,9 @@ if [ -n "$pending" ]; then
     printf '%s\n' "$pending" > "$APP_DIR/installed-version"
     rm -f -- "$APP_DIR/pending-version"
     log "an earlier update to $pending was never confirmed; it is healthy now, recorded as installed"
-  elif [ -f "$APP_DIR/previous.jar" ] && cmp -s -- "$APP_DIR/previous.jar" "$APP_DIR/$JAR"; then
-    # The jar is still the previous one: the swap never happened, so $pending never ran and did not
+  elif [ ! -f "$APP_DIR/$JAR" ] ||
+       { [ -f "$APP_DIR/previous.jar" ] && cmp -s -- "$APP_DIR/previous.jar" "$APP_DIR/$JAR"; }; then
+    # No jar yet (first installation) or still the previous one: the swap never happened, so $pending never ran and did not
     # fail. Forget the marker and carry on with a normal update.
     rm -f -- "$APP_DIR/pending-version"
     log "an earlier update to $pending was cut off before the swap; nothing to roll back"

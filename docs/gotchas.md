@@ -49,8 +49,7 @@ mention the test here.
 ## Tests and CI
 
 - Thymeleaf's `~{fragments :: nav}` also selects every other `<nav>` element in that file, not only the
-  one with `th:fragment="nav"`: never put a bare `<nav>` (or `<p>`/`<ul>` named like a fragment) in
-  `fragments.html`. Methods read by a template on a package-private record must be `public`.
+  one with `th:fragment="nav"`: never put another `<nav>` in `fragments.html`. Methods read by a template on a package-private record must be `public`.
 
 - On a CI failure, read the check-run annotations:
   `gh api repos/{owner}/{repo}/check-runs/<job id>/annotations`.

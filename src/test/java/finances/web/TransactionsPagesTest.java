@@ -130,7 +130,7 @@ class TransactionsPagesTest {
 
         assertThat(get("/accounts/" + id + "?page=abc").body()).contains("Item number " + (total - 1));
         assertThat(get("/accounts/" + id + "?page=-4").statusCode()).isEqualTo(200);
-        assertThat(get("/accounts/" + id + "?page=99").body()).contains("No transactions yet.");
+        assertThat(get("/accounts/" + id + "?page=99").body()).contains("No transactions on this page.");
     }
 
     @Test

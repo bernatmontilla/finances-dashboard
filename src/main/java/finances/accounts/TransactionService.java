@@ -79,6 +79,9 @@ public class TransactionService {
      * reference or the same fingerprint, becomes that one booked transaction. A booked transaction
      * never goes back to pending. A transaction in another currency than EUR is counted as refused.
      *
+     * <p>The batch is read inside the write transaction: pass a file or memory, never a stream that waits
+     * on the network (a sync collects its pages first; docs/gotchas.md, SQLite allows one writer).
+     *
      * @throws TransactionException {@code NOT_FOUND} for an unknown account, {@code ARCHIVED} for an archived one
      */
     public DeliveryReport deliver(long accountId, Source source, Stream<DeliveredTransaction> batch) {
@@ -124,11 +127,13 @@ public class TransactionService {
         String fingerprint = fingerprint(fields);
 
         Stored stored;
+        boolean claimed = false;
         int occurrence = 1;
         if (fields.reference() != null) {
             stored = byReference(accountId, fields.reference());
             if (stored == null && t.status() == TransactionStatus.BOOKED) {
                 stored = pendingWithFingerprint(accountId, fingerprint);
+                claimed = stored != null;
             }
         } else {
             occurrence = identical.merge(fingerprint, 1, Integer::sum);
@@ -149,10 +154,15 @@ public class TransactionService {
             tally.added++;
             return;
         }
-        // A booked transaction stays booked, whatever a late or repeated delivery says.
-        Fields wanted = TransactionStatus.BOOKED.code().equals(stored.fields().status())
-                ? fields.withStatus(TransactionStatus.BOOKED.code())
-                : fields;
+        boolean wasBooked = TransactionStatus.BOOKED.code().equals(stored.fields().status());
+        if (wasBooked && t.status() == TransactionStatus.PENDING) {
+            // A booked transaction stays as it is, whatever a late or repeated pending delivery says.
+            jdbc.sql("update transactions set last_seen_at = ? where id = ?").params(now, stored.id()).update();
+            tally.known++;
+            return;
+        }
+        // A delivery without a reference never erases the reference a row already has.
+        Fields wanted = fields.reference() == null ? fields.withReference(stored.fields().reference()) : fields;
         if (wanted.equals(stored.fields())) {
             jdbc.sql("update transactions set last_seen_at = ? where id = ?").params(now, stored.id()).update();
             tally.known++;
@@ -161,12 +171,12 @@ public class TransactionService {
         jdbc.sql("""
                         update transactions set booking_date = ?, value_date = ?, amount_cents = ?, counterparty_name = ?,
                             counterparty_iban = ?, description = ?, status = ?, source = ?, reference = ?, fingerprint = ?,
-                            raw = ?, last_seen_at = ?
+                            raw = ?, last_seen_at = ?, claimed_pending = max(claimed_pending, ?)
                         where id = ?
                         """)
                 .params(wanted.bookingDate(), wanted.valueDate(), wanted.amountCents(), wanted.counterpartyName(),
                         wanted.counterpartyIban(), wanted.description(), wanted.status(), wanted.source(), wanted.reference(),
-                        fingerprint, wanted.raw(), now, stored.id())
+                        fingerprint, wanted.raw(), now, claimed ? 1 : 0, stored.id())
                 .update();
         tally.updated++;
     }
@@ -180,16 +190,18 @@ public class TransactionService {
     }
 
     private Stored byFingerprint(long accountId, String fingerprint, int occurrence) {
-        return jdbc.sql(STORED + " where account_id = ? and reference is null and fingerprint = ? and occurrence = ?")
+        // A row that was pending and became booked under a reference keeps its place, so that pending
+        // deliveries of the identical ones still left over line up with the rows still pending.
+        return jdbc.sql(STORED + " where account_id = ? and (reference is null or claimed_pending = 1) and fingerprint = ? and occurrence = ? limit 1")
                 .params(accountId, fingerprint, occurrence)
                 .query(TransactionService::stored)
                 .optional()
                 .orElse(null);
     }
 
-    /** The oldest pending transaction without a reference that looks like the one now arriving as booked. */
+    /** The oldest pending transaction (with or without a reference of its own) that looks like the one now arriving as booked. */
     private Stored pendingWithFingerprint(long accountId, String fingerprint) {
-        return jdbc.sql(STORED + " where account_id = ? and reference is null and status = 'pending' and fingerprint = ? order by occurrence, id limit 1")
+        return jdbc.sql(STORED + " where account_id = ? and status = 'pending' and fingerprint = ? order by occurrence, id limit 1")
                 .params(accountId, fingerprint)
                 .query(TransactionService::stored)
                 .optional()
@@ -325,9 +337,9 @@ public class TransactionService {
     private record Fields(String bookingDate, String valueDate, long amountCents, String counterpartyName,
             String counterpartyIban, String description, String status, String source, String reference, String raw) {
 
-        Fields withStatus(String newStatus) {
+        Fields withReference(String newReference) {
             return new Fields(bookingDate, valueDate, amountCents, counterpartyName, counterpartyIban, description,
-                    newStatus, source, reference, raw);
+                    status, source, newReference, raw);
         }
     }
 

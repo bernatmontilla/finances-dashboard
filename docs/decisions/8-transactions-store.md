@@ -18,14 +18,27 @@
   - Fingerprint = SHA-256 of booking date, cents, counterparty and description, the two texts trimmed,
     white space collapsed and lower-cased. The counterparty IBAN is not part of it (spec).
 - **Pending then booked**: a booked transaction with a reference that is not known first looks for the
-  oldest pending one **without a reference and with the same fingerprint** and becomes it (status and
-  reference are set; one row, counted as updated). Without a reference the pending one is found by
-  fingerprint directly. A booked row never goes back to pending, whatever a late delivery says.
+  oldest pending one **with the same fingerprint, whether it has a reference of its own or not**, and
+  becomes it (status and reference are set; one row, counted as updated). Without a reference the
+  pending one is found by fingerprint directly. A booked row never goes back to pending, whatever a late
+  delivery says. A row that was claimed this way keeps its place among the identical ones
+  (`claimed_pending`), so pending deliveries of the siblings still left over line up with their own
+  rows whatever the order of the batch (a test covers both orders).
 - **Known limit, on purpose**: the fingerprint includes the booking date, so a pending transaction whose
   bank later books it **under another date, without a reference both times**, is stored twice. Matching
   across dates would guess. A pending item that is delivered again after its booked twin was stored
-  under a reference (a stale re-delivery) is stored as a new pending one; real syncs do not return
-  pending items that are booked.
+  under a reference **with another reference than the pending one had** is stored as a new pending one;
+  real syncs do not return pending items that are booked.
+- **A pending delivery never touches a booked row** (it only bumps `last_seen_at`), and a delivery
+  without a reference never erases the reference a row has.
+- **One source per account**: a delivery without a reference matches rows without one (and claimed
+  ones), not rows that have a reference of their own. Mixing a bank and a CSV import of the same
+  transactions on one account is not deduplicated; an account has one source (`account.source`).
+- **For the manual path (later)**: a delivery that fingerprint-matches a row with `source = 'manual'`
+  would rewrite its source fields. No code enters transactions by hand yet; when one does, it must be
+  excluded from source updates (the note is already safe).
+- **The batch is read inside the write transaction**: a caller passes a file or memory, never a stream
+  that waits on the network (a sync collects its pages first).
 - **What a delivery writes**: only source fields (dates, amount, counterparty, description, status,
   source, reference, raw, last seen). The owner's note is in `transaction_note`, written only by
   `setNote`; category and split will join it there. `first_seen_at` is set once.

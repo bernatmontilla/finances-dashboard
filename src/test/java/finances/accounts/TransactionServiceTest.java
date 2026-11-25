@@ -186,6 +186,37 @@ class TransactionServiceTest {
     }
 
     @Test
+    void aPendingOneLeftOverAfterASiblingWasBookedStaysTheSameRowInEitherOrder() {
+        for (boolean pendingFirst : new boolean[] {true, false}) {
+            Account account = accounts.addManual("Order " + pendingFirst, Scope.PRIVATE, Kind.CURRENT, null);
+            DeliveredTransaction p = pending(DAY, -250, "Corner Grocery", "Coffee");
+            DeliveredTransaction b = booked(DAY, -250, "Corner Grocery", "Coffee", "REF-2");
+            transactions.deliver(account.id(), Source.BANK, List.of(p, p));
+
+            transactions.deliver(account.id(), Source.BANK, pendingFirst ? List.of(p, b) : List.of(b, p));
+            transactions.deliver(account.id(), Source.BANK, pendingFirst ? List.of(p, b) : List.of(b, p));
+
+            List<Transaction> rows = transactions.forAccount(account.id(), 0).items();
+            assertThat(rows).hasSize(2);
+            assertThat(rows).extracting(Transaction::status).containsExactlyInAnyOrder(TransactionStatus.BOOKED, TransactionStatus.PENDING);
+        }
+    }
+
+    @Test
+    void aPendingTransactionWithItsOwnReferenceBecomesTheBookedOneWithAnotherReference() {
+        deliver(new DeliveredTransaction(DAY, null, -4500, "EUR", "Example Insurance", null, "Premium",
+                TransactionStatus.PENDING, "PEND-1", "raw"));
+
+        DeliveryReport report = deliver(booked(DAY, -4500, "Example Insurance", "Premium", "BOOK-1"));
+
+        assertThat(report).isEqualTo(new DeliveryReport(0, 1, 0, 0));
+        assertThat(stored()).singleElement().satisfies(t -> {
+            assertThat(t.status()).isEqualTo(TransactionStatus.BOOKED);
+            assertThat(t.reference()).isEqualTo("BOOK-1");
+        });
+    }
+
+    @Test
     void aBookedTransactionNeverGoesBackToPending() {
         deliver(booked(DAY, -4500, "Example Insurance", "Premium", null));
 

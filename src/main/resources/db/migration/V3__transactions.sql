@@ -21,6 +21,9 @@ create table transactions (
     reference text,
     fingerprint text not null,
     occurrence integer not null default 1 check (occurrence >= 1),
+    -- 1 when this row was first delivered as pending and later became this booked one: it keeps its
+    -- place (fingerprint, occurrence) among identical transactions, so the pending ones left over still match.
+    claimed_pending integer not null default 0 check (claimed_pending in (0, 1)),
     raw text not null default '',
     first_seen_at text not null,
     last_seen_at text not null
@@ -28,6 +31,8 @@ create table transactions (
 
 create unique index transactions_by_reference on transactions (account_id, reference) where reference is not null;
 create unique index transactions_by_fingerprint on transactions (account_id, fingerprint, occurrence) where reference is null;
+-- Looks up a row by its place among identical ones, whether or not it has a reference (see claimed_pending).
+create index transactions_by_place on transactions (account_id, fingerprint, occurrence);
 create index transactions_by_account_date on transactions (account_id, booking_date desc, id desc);
 create index transactions_by_date on transactions (booking_date desc, id desc);
 

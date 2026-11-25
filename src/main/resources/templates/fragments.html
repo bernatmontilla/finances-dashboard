@@ -23,7 +23,7 @@
     </span>
   </span>
 
-  <span th:fragment="delivered(view)" class="muted">
+  <span th:fragment="delivered(view)" class="muted delivered">
     <span th:if="${view == null}" th:text="#{transactions.neverDelivered}"></span>
     <th:block th:if="${view != null}">
       <span th:text="#{transactions.delivered(${view.date})}"></span>
@@ -32,7 +32,8 @@
   </span>
 
   <th:block th:fragment="transactions(view, showAccount, path)">
-    <p th:if="${view.empty}" th:text="#{transactions.none}"></p>
+    <p th:if="${view.empty and !view.hasPrevious}" th:text="#{transactions.none}"></p>
+    <p th:if="${view.empty and view.hasPrevious}" th:text="#{transactions.noMore}"></p>
     <ul th:unless="${view.empty}" class="list transactions">
       <li th:each="row : ${view.rows}">
         <span class="meta muted">

@@ -31,7 +31,9 @@ public class BackupException extends RuntimeException {
         /** There is no earlier database to go back to. */
         NOTHING_TO_UNDO,
         /** The target file of a command-line backup is already there. */
-        TARGET_EXISTS;
+        TARGET_EXISTS,
+        /** An earlier restore left the database it replaced aside; it is not overwritten. */
+        LEFTOVER;
 
         public String messageKey() {
             return "backup.error." + name().toLowerCase(java.util.Locale.ROOT);

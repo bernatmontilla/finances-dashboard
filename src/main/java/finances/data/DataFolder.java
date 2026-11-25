@@ -20,6 +20,8 @@ public final class DataFolder implements AutoCloseable {
     public static final String PREVIOUS_DATABASE_FILE = "finances.previous.db";
     /** Where uploads, backups in the making and restores in the making live: inside the folder, never web-visible. */
     public static final String SCRATCH_FOLDER = "tmp";
+    /** Where a restore parks the database it replaces for a moment; found here after a power cut, it is put back at start. */
+    public static final String REPLACED_DATABASE_FILE = "finances.replaced.db";
     static final String LOCK_FILE = "finances.lock";
 
     private final Path path;
@@ -54,6 +56,7 @@ public final class DataFolder implements AutoCloseable {
             if (lock == null) {
                 throw inUse(folder);
             }
+            recoverInterruptedRestore(folder);
             clearScratch(folder);
             return new DataFolder(folder, channel, lock);
         } catch (OverlappingFileLockException e) {
@@ -65,6 +68,19 @@ public final class DataFolder implements AutoCloseable {
         } catch (RuntimeException e) {
             closeQuietly(channel);
             throw e;
+        }
+    }
+
+    /**
+     * A restore cut off between moving the old database aside and moving the new one in leaves no
+     * {@code finances.db}: without this, the application would start on an empty database and the
+     * owner's data would sit unnoticed in the parked file.
+     */
+    private static void recoverInterruptedRestore(Path folder) throws IOException {
+        Path database = folder.resolve(DATABASE_FILE);
+        Path parked = folder.resolve(REPLACED_DATABASE_FILE);
+        if (!Files.exists(database) && Files.isRegularFile(parked)) {
+            Files.move(parked, database);
         }
     }
 

@@ -1,6 +1,7 @@
 package finances.backup;
 
 import finances.backup.BackupException.Reason;
+import finances.data.DataFolder;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -40,6 +41,7 @@ import org.flywaydb.core.api.MigrationVersion;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.sqlite.SQLiteConfig;
+import org.sqlite.SQLiteOpenMode;
 import org.sqlite.SQLiteDataSource;
 
 /**
@@ -106,9 +108,12 @@ public final class BackupService {
         }
         Path snapshot = scratchFile("backup-" + token() + ".db");
         try {
+            gate.enter(); // not while a restore swaps the file
             try (Connection connection = open(database); PreparedStatement vacuum = connection.prepareStatement("vacuum into ?")) {
                 vacuum.setString(1, snapshot.toString());
                 vacuum.execute();
+            } finally {
+                gate.leave();
             }
             String schema;
             try (Connection connection = open(snapshot)) {
@@ -142,6 +147,7 @@ public final class BackupService {
                 try (OutputStream out = Files.newOutputStream(ownerOnly(part), StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
                     backup.writeTo(out);
                 }
+                force(part);
                 Files.move(part, file);
                 return file;
             } catch (IOException e) {
@@ -303,6 +309,7 @@ public final class BackupService {
                 out.write(buffer, 0, read);
             }
         }
+        force(to);
         if (written != manifest.databaseBytes() || !HexFormat.of().formatHex(digest.digest()).equals(manifest.databaseSha256())) {
             throw damaged();
         }
@@ -364,29 +371,40 @@ public final class BackupService {
         if (!Files.isRegularFile(database())) {
             return Summary.EMPTY;
         }
+        gate.enter();
         try (Connection connection = open(database())) {
             return summary(connection);
         } catch (SQLException e) {
             return Summary.EMPTY;
+        } finally {
+            gate.leave();
         }
     }
 
     private void replaceDatabaseWith(Path source) {
         Path database = database();
-        Path replaced = folder.resolve("finances.replaced.db");
+        Path replaced = folder.resolve(DataFolder.REPLACED_DATABASE_FILE);
         try {
             gate.exclusive(gateWait, () -> {
+                if (Files.exists(replaced)) {
+                    // Never overwritten: after a power cut or a failed rename it may hold the only copy of the data.
+                    throw new BackupException(Reason.LEFTOVER, "An earlier restore left a database aside as " + replaced.getFileName()
+                            + " in the data folder. Nothing was changed; see docs/install.md before restoring again.");
+                }
                 boolean hadDatabase = Files.isRegularFile(database);
                 if (hadDatabase) {
                     flush(database);
-                    Files.move(database, replaced, StandardCopyOption.REPLACE_EXISTING);
+                    Files.move(database, replaced);
                 }
+                boolean movedIn = false;
                 try {
+                    force(source);
                     Files.move(source, database);
+                    movedIn = true;
                     migrate(database);
                 } catch (Exception failure) {
                     deleteSidecars(database);
-                    if (Files.exists(database)) {
+                    if (movedIn) {
                         Files.move(database, source, StandardCopyOption.REPLACE_EXISTING);
                     }
                     if (hadDatabase) {
@@ -399,9 +417,11 @@ public final class BackupService {
                         Files.move(replaced, previous(), StandardCopyOption.REPLACE_EXISTING);
                     } catch (IOException keptAside) {
                         // The restore itself succeeded and must not be reported as failed; the old
-                        // database stays as finances.replaced.db (docs/install.md).
+                        // database stays as finances.replaced.db, and the next restore refuses
+                        // (LEFTOVER) instead of overwriting it (docs/install.md).
                     }
                 }
+                syncFolder();
                 return null;
             });
         } catch (BackupException e) {
@@ -411,6 +431,21 @@ public final class BackupService {
         } catch (Exception e) {
             throw new BackupException(Reason.MIGRATION_FAILED,
                     "The restored database could not be brought up to date. The old database is back in use and nothing was changed.", e);
+        }
+    }
+
+    /** Writes a file's data to the disk before it is renamed into place, so a power cut cannot leave an empty database. */
+    private static void force(Path file) throws IOException {
+        try (java.nio.channels.FileChannel channel = java.nio.channels.FileChannel.open(file, StandardOpenOption.WRITE)) {
+            channel.force(true);
+        }
+    }
+
+    private void syncFolder() {
+        try (java.nio.channels.FileChannel channel = java.nio.channels.FileChannel.open(folder, StandardOpenOption.READ)) {
+            channel.force(true);
+        } catch (IOException | RuntimeException ignored) {
+            // not every platform can sync a folder; the renames are done either way
         }
     }
 
@@ -493,8 +528,11 @@ public final class BackupService {
         return config;
     }
 
+    /** Opens an existing file only: a missing database is never created by looking at it. */
     private static Connection open(Path file) throws SQLException {
-        return config().createConnection("jdbc:sqlite:" + file);
+        SQLiteConfig config = config();
+        config.resetOpenMode(SQLiteOpenMode.CREATE);
+        return config.createConnection("jdbc:sqlite:" + file);
     }
 
     private static void requireIntact(Connection connection) throws SQLException {

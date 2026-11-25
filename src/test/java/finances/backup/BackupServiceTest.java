@@ -322,6 +322,64 @@ class BackupServiceTest {
     }
 
     @Test
+    void aDatabaseLeftAsideByAnEarlierRestoreIsNeverOverwritten() throws Exception {
+        Path folder = folder("data");
+        BackupFixtures.open(folder).fill();
+        Path file = backup(folder, temp.resolve("backup.zip"));
+        Files.writeString(folder.resolve("finances.replaced.db"), "the only copy of somebody's data");
+        String before = content(folder);
+
+        BackupService service = service(folder);
+        RestorePlan plan = service.stage(file);
+        assertThatThrownBy(() -> service.restore(plan.token(), "RESTORE")).isInstanceOfSatisfying(BackupException.class,
+                e -> assertThat(e.reason()).isEqualTo(Reason.LEFTOVER));
+        assertThat(Files.readString(folder.resolve("finances.replaced.db"))).isEqualTo("the only copy of somebody's data");
+        assertThat(content(folder)).isEqualTo(before);
+
+        Files.copy(folder.resolve("finances.db"), folder.resolve("finances.previous.db"));
+        assertThatThrownBy(() -> service.undoRestore("UNDO")).isInstanceOfSatisfying(BackupException.class,
+                e -> assertThat(e.reason()).isEqualTo(Reason.LEFTOVER));
+        assertThat(Files.readString(folder.resolve("finances.replaced.db"))).isEqualTo("the only copy of somebody's data");
+    }
+
+    @Test
+    void anUndoThatCannotBeMigratedKeepsBothDatabasesWhereTheyWere() throws Exception {
+        Path other = folder("other");
+        BackupFixtures broken = BackupFixtures.open(other).fill();
+        broken.jdbc.sql("update flyway_schema_history set checksum = 12345 where version = '3'").update();
+        broken.jdbc.sql("pragma wal_checkpoint(truncate)").query().listOfRows();
+
+        Path folder = folder("data");
+        BackupFixtures live = BackupFixtures.open(folder).fill();
+        live.accounts.addManual("Only here", finances.accounts.Scope.PRIVATE, finances.accounts.Kind.CURRENT, "");
+        String before = BackupFixtures.open(folder).content();
+        Path previous = folder.resolve("finances.previous.db");
+        Path backup = backup(other, temp.resolve("broken.zip"));
+        // The previous database is one that no longer matches this application's migrations.
+        try (ZipFile zip = new ZipFile(backup.toFile())) {
+            Files.write(previous, zip.getInputStream(zip.getEntry("finances.db")).readAllBytes());
+        }
+        byte[] previousBytes = Files.readAllBytes(previous);
+
+        BackupService service = service(folder);
+        assertThatThrownBy(() -> service.undoRestore("UNDO")).isInstanceOfSatisfying(BackupException.class,
+                e -> assertThat(e.reason()).isEqualTo(Reason.MIGRATION_FAILED));
+
+        assertThat(Files.readAllBytes(previous)).as("the previous database is still there, untouched").isEqualTo(previousBytes);
+        assertThat(content(folder)).isEqualTo(before);
+        assertThat(folder.resolve("finances.replaced.db")).doesNotExist();
+    }
+
+    @Test
+    void lookingAtAMissingDatabaseNeverCreatesOne() throws Exception {
+        Path folder = folder("empty");
+        BackupService service = service(folder);
+        assertThat(service.current()).isEqualTo(Summary.EMPTY);
+        assertThatThrownBy(service::prepare).isInstanceOf(BackupException.class);
+        assertThat(folder.resolve("finances.db")).doesNotExist();
+    }
+
+    @Test
     void aRestoreNeedsTheWordAndAKnownUpload() throws Exception {
         Path folder = folder("data");
         BackupFixtures.open(folder).fill();

@@ -159,6 +159,7 @@ you may read it (`chmod 700`), and updates never touch it.
 |---|---|---|
 | `finances.db` | the database: accounts, balances, transactions, notes, everything entered by hand | yes |
 | `finances.previous.db` | the database as it was before the last restore, so that one restore can be undone | no |
+| `finances.replaced.db` | only for a moment during a restore; see below | no |
 | `finances.lock` | lets only one instance use the folder | no |
 | `tmp/` | uploads and backups in the making; emptied at every start, never web-visible | no |
 | secret files | the bank application key, bank session ids, the after-tax token | **no, on purpose** |
@@ -217,9 +218,12 @@ files there; the application never deletes your backups.
 A restore briefly needs room for the uploaded file about three times over in `tmp/` (the upload, its copy and the checked database), so leave free space of a few times the backup size on the disk of the data folder; the command line restore needs one copy less.
 
 If the disk is full, a backup fails without leaving a partial file and the database in use is
-untouched; so is a restore. If a restore is cut off by a power failure at the very moment of the
-swap, the database from before is in `finances.replaced.db` next to it: rename it to `finances.db`
-with the service stopped.
+untouched; so is a restore. If a restore is cut off by a power failure at the very moment of the swap, the next start puts the
+database from before back (`finances.replaced.db` becomes `finances.db` when there is no
+`finances.db`). If a file `finances.replaced.db` is still there next to a working database, an
+earlier restore could not finish tidying up: the file may hold data that exists nowhere else, so a
+restore or undo is refused until you have looked at it. Keep it somewhere safe or delete it, with the
+service stopped.
 
 ## Where the logs are
 

@@ -60,6 +60,10 @@
   from the fictional set; `theStoredFormat1BackupStillRestores` restores it and checks the data and the
   note. Never regenerate it; when the format changes, add a second fixture next to it.
 - **Left out on purpose**: scheduled backups inside the app, encryption of the file, CSV export (spec);
-  a progress bar for a restore (it takes a moment on a small database); recovery by the app itself of a
-  restore cut off by a power failure between two renames (`finances.replaced.db` is documented in
-  `docs/install.md`).
+  a progress bar for a restore (it takes a moment on a small database).
+- **After the risk check** (all three fixed, with tests): a leftover `finances.replaced.db` is never
+  overwritten (a restore or undo is refused with *leftover*); `DataFolder.open` puts it back as
+  `finances.db` when a power cut left no database; the rollback of a failed swap moves back only what
+  was actually moved in (an undo whose migration fails keeps `finances.previous.db`); the live database
+  is opened without SQLite's create flag, and `prepare()` and `current()` take a gate permit; data is
+  fsynced before the renames (`force`) and the folder after.

@@ -258,7 +258,10 @@ public class BankLinkService {
         inTransaction.executeWithoutResult(status -> {
             String iban = AccountService.isValidIban(link.iban()) ? link.iban() : null;
             Account account = accounts.addFromBank(name, scope, kind, iban);
-            store.confirm(link.id(), account.id(), Instant.now(clock));
+            if (!store.confirm(link.id(), account.id(), Instant.now(clock))) {
+                // A second request confirmed it first: roll this one back, creating no orphan account.
+                throw new LinkException(LinkException.Reason.ALREADY_LINKED);
+            }
         });
         return sync.syncLinks(Set.of(link.id()), SyncTrigger.LINK, userHeaders);
     }
@@ -268,7 +271,10 @@ public class BankLinkService {
         BankAccountLink link = offeredLink(consentId, linkId);
         inTransaction.executeWithoutResult(status -> {
             Account account = accounts.attachToBank(accountId);
-            store.confirm(link.id(), account.id(), Instant.now(clock));
+            if (!store.confirm(link.id(), account.id(), Instant.now(clock))) {
+                // A second request confirmed it first: roll this one back, creating no orphan account.
+                throw new LinkException(LinkException.Reason.ALREADY_LINKED);
+            }
         });
         return sync.syncLinks(Set.of(link.id()), SyncTrigger.LINK, userHeaders);
     }

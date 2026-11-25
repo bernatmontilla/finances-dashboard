@@ -163,10 +163,10 @@ class BankPagesTest {
         assertThat(overview).contains("Sync now");
         HttpResponse<String> syncNow = post("/sync", Map.of());
         assertThat(location(syncNow)).startsWith("/?sync=done");
-        assertThat(get(location(syncNow)).body()).contains("Synced 1 accounts.");
+        assertThat(get(location(syncNow)).body()).contains("Accounts synced: 1.");
         String runs = get("/settings").body();
         assertThat(runs).contains("Last sync runs").contains("Sync now, online fetch").contains("synced").contains("Example Bank")
-                .contains("1 accounts linked").contains("waiting for confirmation");
+                .contains("Accounts linked: 1").contains("Waiting for confirmation: 1");
         assertThat(post("/sync", Map.of()).statusCode()).isEqualTo(302);
         HttpResponse<String> crossSite = CLIENT.send(HttpRequest.newBuilder(uri("/sync")).header("Sec-Fetch-Site", "cross-site")
                 .POST(HttpRequest.BodyPublishers.noBody()).build(), HttpResponse.BodyHandlers.ofString());
@@ -187,7 +187,7 @@ class BankPagesTest {
         HttpResponse<String> renewed = get("/settings/bank/callback?code=fictional-code&state=" + lastState());
         assertThat(location(renewed)).contains("reattached=1");
         assertThat(accounts.list(false)).as("no new account").hasSize(1);
-        assertThat(get(location(renewed)).body()).contains("1 accounts were re-attached to this consent and synced");
+        assertThat(get(location(renewed)).body()).contains("Accounts re-attached to this consent and synced: 1");
         assertThat(get("/accounts/" + everyday).body()).doesNotContain("Consent expired");
 
         // Unlink: the account and its history stay, as a manual account.

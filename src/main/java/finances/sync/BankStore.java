@@ -103,10 +103,11 @@ class BankStore {
                 .optional();
     }
 
-    void confirm(long linkId, long accountId, Instant now) {
-        jdbc.sql("update bank_account set account_id = ?, linked_at = ? where id = ? and account_id is null")
+    /** Whether the offered account was still waiting: false when a second request got there first. */
+    boolean confirm(long linkId, long accountId, Instant now) {
+        return jdbc.sql("update bank_account set account_id = ?, linked_at = ? where id = ? and account_id is null")
                 .params(accountId, now.toString(), linkId)
-                .update();
+                .update() == 1;
     }
 
     void deleteLink(long id) {
@@ -131,8 +132,18 @@ class BankStore {
                 .single();
     }
 
-    void markSuccess(long linkId, Instant startedAt) {
-        jdbc.sql("update bank_account set last_success_at = ? where id = ?").params(startedAt.toString(), linkId).update();
+    /**
+     * Records the success, but only when the link is still as it was when the fetch began (same consent, uid, account
+     * and last success): a restore, an unlink or a renewal in the meantime means what was fetched belongs elsewhere.
+     */
+    boolean markSuccess(BankAccountLink before, Instant startedAt) {
+        return jdbc.sql("""
+                        update bank_account set last_success_at = ?
+                        where id = ? and consent_id = ? and uid = ? and account_id is ? and last_success_at is ?
+                        """)
+                .params(startedAt.toString(), before.id(), before.consentId(), before.uid(), before.accountId(),
+                        before.lastSuccessAt() == null ? null : before.lastSuccessAt().toString())
+                .update() == 1;
     }
 
     // ----- runs

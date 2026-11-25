@@ -15,9 +15,10 @@
     <p th:if="${syncKey != null}" class="notice" role="status" th:text="#{${syncKey}}"></p>
     <p th:if="${reattached gt 0}" class="notice" role="status" th:text="#{bank.consent.reattached(${reattached})}"></p>
 
-    <p th:if="${!consent.ended()}" th:text="#{bank.consent.validUntil(${validUntil})}"></p>
+    <p th:if="${!consent.ended()}" class="nowrap" th:text="#{bank.consent.validUntil(${validUntil})}"></p>
     <th:block th:if="${consent.ended()}">
-      <p class="notice warning" th:text="#{bank.consent.expired(${validUntil})}"></p>
+      <p class="notice warning" th:text="#{bank.consent.expired}"></p>
+      <p class="nowrap muted" th:text="#{bank.consent.wasValidUntil(${validUntil})}"></p>
       <form method="post" th:action="@{/settings/bank/consents/{id}/renew(id=${consent.id})}">
         <p class="actions"><button type="submit" th:text="#{bank.renew}"></button></p>
       </form>
@@ -26,13 +27,14 @@
     <h2 th:text="#{bank.consent.linked}"></h2>
     <p th:if="${linked.empty}" class="muted" th:text="#{bank.consent.noneLinked}"></p>
     <ul class="list" th:unless="${linked.empty}">
-      <li th:each="row : ${linked}">
+      <li th:each="row : ${linked}" class="bank-row">
         <a th:href="@{/accounts/{id}(id=${row.accountId})}" th:text="${row.name}"></a>
         <span class="muted" th:if="${row.iban != null}" th:text="${row.iban}"></span>
       </li>
     </ul>
 
-    <th:block th:unless="${offered.empty}">
+    <p th:if="${consent.ended() and !offered.empty}" class="notice" th:text="#{bank.consent.renewFirst}"></p>
+    <th:block th:if="${!consent.ended() and !offered.empty}">
       <h2 th:text="#{bank.consent.offered}"></h2>
       <p th:text="#{bank.consent.offeredIntro}"></p>
       <section th:each="row : ${offered}" class="offer">

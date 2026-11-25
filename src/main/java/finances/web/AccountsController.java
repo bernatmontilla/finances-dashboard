@@ -55,8 +55,9 @@ class AccountsController {
     String list(Model model) {
         LocalDate today = accounts.today();
         Map<Long, Instant> delivered = transactions.lastDelivered();
-        model.addAttribute("groups", AccountViews.groups(accounts.list(false), today, delivered, transactions.zone()));
-        model.addAttribute("archivedGroups", AccountViews.groups(accounts.list(true), today, delivered, transactions.zone()));
+        var banks = accounts.latestBankBalances();
+        model.addAttribute("groups", AccountViews.groups(accounts.list(false), today, delivered, transactions.zone(), banks));
+        model.addAttribute("archivedGroups", AccountViews.groups(accounts.list(true), today, delivered, transactions.zone(), banks));
         return "accounts";
     }
 

@@ -1,0 +1,12 @@
+{
+  "balances": [
+    {
+      "name": "Available balance",
+      "balance_amount": {
+        "currency": "EUR",
+        "amount": "1234.56"
+      },
+      "balance_type": "ITAV"
+    }
+  ]
+}

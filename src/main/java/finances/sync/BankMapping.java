@@ -27,6 +27,8 @@ final class BankMapping {
             List.of("CLBD", "ITBD", "OPBD", "CLAV", "ITAV", "XPCD", "VALU", "FWAV", "OPAV", "INFO", "PRCD", "OTHR");
     /** An unsigned decimal with a dot and at most two decimals (more only when the extra ones are zeros). */
     private static final Pattern AMOUNT = Pattern.compile("([0-9]{1,15})(?:\\.([0-9]{1,2})0*)?");
+    /** A balance has no credit/debit indicator, so an overdraft or a loan comes with a minus sign. */
+    private static final Pattern SIGNED_AMOUNT = Pattern.compile("(-?)([0-9]{1,15})(?:\\.([0-9]{1,2})0*)?");
 
     private BankMapping() {
     }
@@ -89,7 +91,7 @@ final class BankMapping {
             if (rank >= bestRank) {
                 continue;
             }
-            long cents = cents(required(amount, "amount"));
+            long cents = signedCents(required(amount, "amount"));
             String changed = text(node, "last_change_date_time");
             String reference = text(node, "reference_date");
             ChosenBalance chosen;
@@ -161,6 +163,12 @@ final class BankMapping {
                 text(counterparty, "name"), text(counterpartyAccount, "iban"), description(node), mapped, reference, node.toString());
     }
 
+    /** A pending transaction with no date of any kind: it is dated by the day of the fetch, unless already known. */
+    static boolean undatedPending(JsonNode node) {
+        return "PDNG".equals(text(node, "status")) && text(node, "booking_date") == null && text(node, "transaction_date") == null
+                && text(node, "value_date") == null;
+    }
+
     private static String description(JsonNode node) {
         List<String> parts = new ArrayList<>();
         for (JsonNode line : node.path("remittance_information")) {
@@ -190,6 +198,16 @@ final class BankMapping {
         } catch (ArithmeticException e) {
             throw unexpected();
         }
+    }
+
+    /** Like {@link #cents} for a balance, which may be negative (an overdraft, a loan). */
+    static long signedCents(String amount) {
+        var matcher = SIGNED_AMOUNT.matcher(amount.strip());
+        if (!matcher.matches()) {
+            throw unexpected();
+        }
+        long cents = cents(amount.strip().replaceFirst("^-", ""));
+        return matcher.group(1).isEmpty() ? cents : -cents;
     }
 
     private static LocalDate date(JsonNode node, String field) {

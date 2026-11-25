@@ -287,6 +287,25 @@ public class TransactionService {
                 .orElse(null);
     }
 
+    /**
+     * The date of the oldest pending bank transaction of the account with this amount, counterparty and description
+     * (normalised): used for a pending item the bank gave no date at all, so that it keeps the day it was first seen
+     * instead of becoming a new row every day, with the owner's note left behind on the old one.
+     */
+    public Optional<LocalDate> pendingBankDate(long accountId, long amountCents, String counterparty, String description) {
+        String wantedCounterparty = normalise(counterparty);
+        String wantedDescription = normalise(description);
+        return jdbc.sql("select booking_date, counterparty_name, description from transactions where account_id = ? and status = 'pending'"
+                        + " and source = 'bank' and amount_cents = ? order by booking_date, id")
+                .params(accountId, amountCents)
+                .query((rs, row) -> new String[] {rs.getString("booking_date"), rs.getString("counterparty_name"), rs.getString("description")})
+                .list()
+                .stream()
+                .filter(r -> normalise(r[1]).equals(wantedCounterparty) && normalise(r[2]).equals(wantedDescription))
+                .map(r -> LocalDate.parse(r[0]))
+                .findFirst();
+    }
+
     // ----- reading
 
     /** Newest booking date first, then the last stored first. {@code page} counts from 0. */

@@ -2,7 +2,9 @@ package finances.web;
 
 import finances.accounts.Account;
 import finances.accounts.AccountSummary;
+import finances.accounts.AsOfBasis;
 import finances.accounts.BalanceEntry;
+import finances.accounts.BankBalanceInfo;
 import finances.accounts.Kind;
 import finances.accounts.Scope;
 import java.time.Instant;
@@ -23,7 +25,10 @@ final class AccountViews {
     }
 
     /** A balance as shown. {@code debt}: shown as owed, never as money that is available. */
-    record BalanceView(String amount, String date, String ageKey, long ageDays) {
+    record BalanceView(String amount, String date, String ageKey, long ageDays, String noteKey, String noteArg) {
+        public boolean hasNote() {
+            return noteKey != null;
+        }
     }
 
     /** When an account's transactions were last delivered, as a day and its age (hard rule 9). */
@@ -55,7 +60,7 @@ final class AccountViews {
     static BalanceView balance(BalanceEntry entry, LocalDate today) {
         long days = Math.max(0, ChronoUnit.DAYS.between(entry.date(), today));
         String ageKey = days == 0 ? "age.today" : days == 1 ? "age.yesterday" : "age.days";
-        return new BalanceView(entry.amount().format(), entry.date().toString(), ageKey, days);
+        return new BalanceView(entry.amount().format(), entry.date().toString(), ageKey, days, null, null);
     }
 
     static DeliveryView delivery(Instant deliveredAt, ZoneId zone, LocalDate today) {
@@ -65,11 +70,32 @@ final class AccountViews {
         return new DeliveryView(day.toString(), ageKey, days);
     }
 
-    static AccountRow row(AccountSummary summary, LocalDate today, Map<Long, Instant> delivered, ZoneId zone) {
+    /**
+     * A bank balance is never shown as more than it is (hard rule 9): a type other than the booked ones says which
+     * type it is, and one the bank gave no age for says that it was fetched, not that it is correct as of a day.
+     */
+    static BalanceView balance(BalanceEntry entry, LocalDate today, BankBalanceInfo bank, ZoneId zone) {
+        BalanceView plain = balance(entry, today);
+        if (bank == null || !bank.amount().equals(entry.amount()) || !bank.date().equals(entry.date())) {
+            return plain;
+        }
+        if (!bank.booked()) {
+            return new BalanceView(plain.amount(), plain.date(), plain.ageKey(), plain.ageDays(), "bank.balance.note.other", bank.type());
+        }
+        if (bank.basis() == AsOfBasis.FETCHED) {
+            return new BalanceView(plain.amount(), plain.date(), plain.ageKey(), plain.ageDays(), "bank.balance.note.fetched",
+                    BankViews.moment(bank.asOf(), zone));
+        }
+        return plain;
+    }
+
+    static AccountRow row(AccountSummary summary, LocalDate today, Map<Long, Instant> delivered, ZoneId zone,
+            Map<Long, BankBalanceInfo> banks) {
         Account account = summary.account();
         Instant at = delivered.get(account.id());
+        BankBalanceInfo bank = banks.get(account.id());
         return new AccountRow(account.id(), account.name(), scopeKey(account.scope()), kindKey(account.kind()),
-                account.iban(), account.kind() == Kind.DEBT, summary.latest().map(e -> balance(e, today)).orElse(null),
+                account.iban(), account.kind() == Kind.DEBT, summary.latest().map(e -> balance(e, today, bank, zone)).orElse(null),
                 at == null ? null : delivery(at, zone, today));
     }
 
@@ -79,11 +105,16 @@ final class AccountViews {
     }
 
     static List<Group> groups(List<AccountSummary> summaries, LocalDate today, Map<Long, Instant> delivered, ZoneId zone) {
+        return groups(summaries, today, delivered, zone, Map.of());
+    }
+
+    static List<Group> groups(List<AccountSummary> summaries, LocalDate today, Map<Long, Instant> delivered, ZoneId zone,
+            Map<Long, BankBalanceInfo> banks) {
         List<Group> groups = new ArrayList<>();
         for (Scope scope : Scope.values()) {
             List<AccountRow> rows = summaries.stream()
                     .filter(s -> s.account().scope() == scope)
-                    .map(s -> row(s, today, delivered, zone))
+                    .map(s -> row(s, today, delivered, zone, banks))
                     .toList();
             if (!rows.isEmpty()) {
                 groups.add(new Group(scopeKey(scope), rows));

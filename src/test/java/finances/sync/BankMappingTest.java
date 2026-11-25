@@ -164,6 +164,19 @@ class BankMappingTest {
     }
 
     @Test
+    void aBalanceMayBeNegativeAnOverdraftOrALoanButATransactionAmountMayNot() {
+        BankMapping.ChosenBalance overdrawn = balance("""
+                {"balances":[{"balance_amount":{"currency":"EUR","amount":"-123.45"},"balance_type":"CLBD"}]}
+                """);
+        assertThat(overdrawn.cents()).isEqualTo(-12345);
+        assertThat(BankMapping.signedCents("-0.05")).isEqualTo(-5);
+        assertThat(BankMapping.signedCents("5")).isEqualTo(500);
+        for (String bad : List.of("--1", "-", "1-", "+1", "-1.234", "")) {
+            assertThatThrownBy(() -> BankMapping.signedCents(bad)).as(bad).isInstanceOf(BankApiException.class);
+        }
+    }
+
+    @Test
     void theInDayBookedBalanceIsTheFallbackAndAnythingElseKeepsItsOwnType() {
         assertThat(balance("""
                 {"balances":[{"balance_amount":{"currency":"EUR","amount":"5.00"},"balance_type":"ITAV"},

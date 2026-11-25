@@ -219,6 +219,60 @@ class BankSyncTest {
     }
 
     @Test
+    void aSecondConfirmationOfTheSameAccountCreatesNoOrphanAccount() {
+        LinkOutcome outcome = h.linkBank(USER);
+        BankAccountLink first = h.store.links(outcome.consentId()).getFirst();
+        h.link.create(outcome.consentId(), first.id(), "Everyday", Scope.PRIVATE, Kind.CURRENT, USER);
+        // Another request that passed the check before the first one confirmed: simulate it at the store.
+        assertThat(h.store.confirm(first.id(), 999, h.clock.instant())).isFalse();
+        assertThatThrownBy(() -> h.link.create(outcome.consentId(), first.id(), "Again", Scope.PRIVATE, Kind.CURRENT, USER))
+                .isInstanceOfSatisfying(LinkException.class, e -> assertThat(e.reason()).isEqualTo(LinkException.Reason.ALREADY_LINKED));
+
+        assertThat(h.accounts.list(false)).hasSize(1);
+    }
+
+    @Test
+    void aBalanceOfAnotherTypeWithoutAnAgeIsStoredAsExactlyThat() {
+        h.bank.balancesFixture(FakeEnableBanking.CURRENT_UID, "balances-available-only");
+
+        linkBothAsNewAccounts();
+
+        BankBalanceInfo info = h.accounts.latestBankBalance(everyday()).orElseThrow();
+        assertThat(info.type()).isEqualTo("ITAV");
+        assertThat(info.booked()).isFalse();
+        assertThat(info.basis()).isEqualTo(AsOfBasis.FETCHED);
+        assertThat(info.asOf()).isEqualTo(Instant.parse("2026-11-26T12:00:00Z"));
+    }
+
+    @Test
+    void aLinkThatChangedWhileTheFetchWasInFlightStoresNothing() throws Exception {
+        linkBothAsNewAccounts();
+        int transactions = h.count("select count(*) from transactions");
+        Instant success = h.store.linkOfAccount(everyday()).orElseThrow().lastSuccessAt();
+        h.bank.transactions(FakeEnableBanking.Transactions.SECOND);
+        CountDownLatch seen = new CountDownLatch(1);
+        h.bank.balancesDelay(600, seen);
+        nextDay();
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<SyncSummary> run = pool.submit(() -> h.sync.syncAll(SyncTrigger.SCHEDULED, Map.of()));
+            assertThat(seen.await(10, TimeUnit.SECONDS)).isTrue();
+            // A restore or a renewal in the meantime: the account now has another uid.
+            h.jdbc.sql("update bank_account set uid = 'cccccccc-0000-4000-8000-000000000001' where account_id = ?").param(everyday()).update();
+
+            assertThat(run.get(30, TimeUnit.SECONDS).failed()).isEqualTo(1);
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(lastRun(everyday()).reason()).isEqualTo("store_failed");
+        assertThat(h.count("select count(*) from transactions where account_id = ?", everyday())).isEqualTo(5);
+        assertThat(h.count("select count(*) from transactions")).isEqualTo(transactions);
+        assertThat(h.transactions.forAccount(everyday(), 0).items()).filteredOn(Transaction::pending).hasSize(1);
+        assertThat(h.store.linkOfAccount(everyday()).orElseThrow().lastSuccessAt()).isEqualTo(success);
+    }
+
+    @Test
     void anAccountInAnotherCurrencyIsListedAsNotSupportedAndCannotBeLinked() {
         LinkOutcome outcome = h.linkBank(USER);
         BankAccountLink multi = h.store.links(outcome.consentId()).get(2);

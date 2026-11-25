@@ -152,6 +152,11 @@ public final class FakeEnableBanking implements AutoCloseable {
         this.emptySession = empty;
     }
 
+    /** Answers the balances of this account with another fixture. */
+    public void balancesFixture(String uid, String fixture) {
+        balanceTypesOverride.put(uid, fixture);
+    }
+
     void balancesDelay(long millis, CountDownLatch seen) {
         this.balancesDelayMillis = millis;
         this.balancesSeen = seen;
@@ -240,7 +245,7 @@ public final class FakeEnableBanking implements AutoCloseable {
             if (failure(exchange, uid)) {
                 return;
             }
-            respond(exchange, 200, fixture(uid.endsWith("1") ? "balances-current" : "balances-savings"));
+            respond(exchange, 200, fixture(balanceTypesOverride.getOrDefault(uid, uid.endsWith("1") ? "balances-current" : "balances-savings")));
         } else if (method.equals("GET") && path.matches("/accounts/[^/]+/transactions")) {
             String uid = path.split("/")[2];
             if (failure(exchange, uid)) {

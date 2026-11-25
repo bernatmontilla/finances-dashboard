@@ -79,3 +79,14 @@ FakeEnableBanking.java`). Trying it with a real account is the owner's acceptanc
 - Business accounts: not prevented, not supported by the terms.
 - The tests changed two numbers: the database version in `SettingsBackupPagesTest` and `BackupServiceTest` (3 to 5), because a
   migration was added. No other existing assertion changed.
+
+- Attaching an account that holds CSV-imported transactions shows the overlap twice (the page says so).
+- The overview and lists note a bank balance that is not a booked type (its type) or whose age the bank did not give ("fetched"); the stale marking itself is the next issue, so an expired consent is not yet marked stale there (the account page does say so).
+
+## Found in review and fixed
+
+- A balance may be negative (an overdraft, a loan: no credit/debit indicator); a transaction amount may not. Only balances parse a sign.
+- A pending item with no date of any kind keeps the day it was first seen (`TransactionService.pendingBankDate`), else its fingerprint would change daily and the owner's note would stay on a ghost row.
+- The store step re-checks the link (`markSuccess` only when consent, uid, account and last success are unchanged): a restore, unlink or renewal during a fetch stores nothing (`store_failed`).
+- A second confirmation of the same offered account rolls back (no orphan account).
+- Merge order: V5 skips V4 of pull request 31; merge 31 first, and renumber the later one if the order is ever reversed (Flyway refuses a lower version that was never applied).

@@ -562,6 +562,16 @@ class TransactionServiceTest {
                 .satisfies(t -> assertThat(t.bookingDate()).isEqualTo(DAY.plusDays(1)));
     }
 
+    @Test
+    void aPendingItemWithoutAnyDateKeepsTheDayItWasFirstSeen() {
+        deliverBank(pending(DAY, -800, "Example Gym", "Day pass"), pending(DAY.plusDays(2), -800, "Example Gym", "Other pass"));
+
+        assertThat(transactions.pendingBankDate(everyday.id(), -800, " example  GYM ", "day pass")).contains(DAY);
+        assertThat(transactions.pendingBankDate(everyday.id(), -800, "Example Gym", "Other pass")).contains(DAY.plusDays(2));
+        assertThat(transactions.pendingBankDate(everyday.id(), -801, "Example Gym", "Day pass")).isEmpty();
+        assertThat(transactions.pendingBankDate(everyday.id(), -800, "Example Gym", "Month pass")).isEmpty();
+    }
+
     // ----- pending rows the bank no longer reports (issue #10)
 
     private BankDeliveryReport fromBank(LocalDate coveredFrom, DeliveredTransaction... batch) {

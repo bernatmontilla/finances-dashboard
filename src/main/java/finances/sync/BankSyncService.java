@@ -227,7 +227,11 @@ public class BankSyncService {
         try {
             BankDeliveryReport report = inTransaction.execute(status -> {
                 // A write first, so the single SQLite writer is taken up front (docs/gotchas.md).
-                store.markSuccess(link.id(), started);
+                // The link may have changed while the fetch was in flight (a restore, an unlink, a renewal): what was
+                // fetched belongs to the link as it was, so a changed one stores nothing.
+                if (!store.markSuccess(link, started)) {
+                    throw new IllegalStateException("The link changed during the fetch.");
+                }
                 if (balance != null) {
                     accounts.addBankBalance(link.accountId(), finances.money.Money.eur(balance.cents()), balance.date(),
                             balance.type(), balance.asOf(), balance.basis());
@@ -256,6 +260,9 @@ public class BankSyncService {
             JsonNode answer = client.transactions(link.uid(), from == null ? null : from.toString(), longest, key, headers.values());
             for (JsonNode node : answer.path("transactions")) {
                 DeliveredTransaction delivered = BankMapping.transaction(node, fetchDay);
+                if (delivered != null && BankMapping.undatedPending(node)) {
+                    delivered = withKnownDay(link.accountId(), delivered);
+                }
                 if (delivered != null) {
                     batch.add(delivered);
                 }
@@ -271,6 +278,14 @@ public class BankSyncService {
         }
         // A fetch that never ended is not a complete one, and an incomplete one must not remove anything.
         throw new BankApiException(BankApiException.Reason.UNEXPECTED, null, 0);
+    }
+
+    /** Without a date its fingerprint would change every day: a pending item the bank gave no date keeps the day it was first seen. */
+    private DeliveredTransaction withKnownDay(long accountId, DeliveredTransaction t) {
+        return transactions.pendingBankDate(accountId, t.amountCents(), t.counterpartyName(), t.description())
+                .map(day -> new DeliveredTransaction(day, t.valueDate(), t.amountCents(), t.currency(), t.counterpartyName(),
+                        t.counterpartyIban(), t.description(), t.status(), t.reference(), t.raw()))
+                .orElse(t);
     }
 
     // ----- records and reasons

@@ -37,7 +37,7 @@ class OverviewController {
         model.addAttribute("syncOk", Math.max(0, ok));
         model.addAttribute("syncFailed", Math.max(0, failed));
         model.addAttribute("version", build.getVersion());
-        model.addAttribute("groups", AccountViews.groups(accounts.list(false), accounts.today()));
+        model.addAttribute("groups", AccountViews.groups(accounts.list(false), accounts.today(), java.util.Map.of(), accounts.zone(), accounts.latestBankBalances()));
         return "overview";
     }
 }

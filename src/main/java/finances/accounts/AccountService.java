@@ -43,6 +43,11 @@ public class AccountService {
         this.clock = clock;
     }
 
+    /** The owner's time zone, for showing a moment (stored in UTC) as a calendar day. */
+    public java.time.ZoneId zone() {
+        return clock.getZone();
+    }
+
     /** Today, as the owner's calendar has it: the newest date a balance may be from. */
     public LocalDate today() {
         return LocalDate.now(clock);
@@ -255,6 +260,29 @@ public class AccountService {
     /** The newest balance a bank reported for the account, with its type and how its age is known. */
     public Optional<BankBalanceInfo> latestBankBalance(long accountId) {
         return latestBankBalanceRow(accountId);
+    }
+
+    /** The newest bank balance of every account that has one, by account id (one query, for the lists). */
+    public java.util.Map<Long, BankBalanceInfo> latestBankBalances() {
+        java.util.Map<Long, BankBalanceInfo> latest = new java.util.HashMap<>();
+        jdbc.sql("""
+                        select b.account_id, b.amount_cents, b.currency, b.balance_date, b.balance_type, b.as_of, b.as_of_basis
+                        from balance b
+                        where b.as_of_basis is not null and b.id = (
+                            select id from balance where account_id = b.account_id and as_of_basis is not null
+                            order by balance_date desc, id desc limit 1)
+                        """)
+                .query((rs, row) -> {
+                    latest.put(rs.getLong("account_id"), new BankBalanceInfo(
+                            Money.of(rs.getLong("amount_cents"), rs.getString("currency")),
+                            LocalDate.parse(rs.getString("balance_date")),
+                            rs.getString("balance_type"),
+                            rs.getString("as_of") == null ? null : Instant.parse(rs.getString("as_of")),
+                            AsOfBasis.parse(rs.getString("as_of_basis"))));
+                    return null;
+                })
+                .list();
+        return latest;
     }
 
     private Optional<BankBalanceInfo> latestBankBalanceRow(long accountId) {

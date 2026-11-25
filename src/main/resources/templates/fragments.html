@@ -21,6 +21,7 @@
       <strong th:if="${debt}" class="amount owed" th:text="#{balance.owed(${view.amount})}"></strong>
       <span class="muted" th:text="#{balance.asOf(${view.date})}"></span>
       <span class="muted" th:text="#{${view.ageKey}(${view.ageDays})}"></span>
+      <span th:if="${view.hasNote()}" class="muted" th:text="#{${view.noteKey}(${view.noteArg})}"></span>
     </span>
   </span>
 

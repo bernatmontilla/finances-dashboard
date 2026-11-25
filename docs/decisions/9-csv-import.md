@@ -81,12 +81,18 @@
 - **Upload on disk**: since #12 the application's multipart configuration (`DataConfig`) spools every upload
   to the data folder's scratch folder while the request is read; the servlet container removes it when the
   request ends. Between the preview and the import the file is only in memory (`PendingUploads`).
+- **Warnings before the import** (#37, `docs/decisions/37-csv-import-warnings.md`): a mapping that differs from the
+  saved one in a field that feeds a transaction's identity, on a file whose date range already holds stored
+  transactions, shows a warning with their number and refuses the import until a box is ticked; and a file with one
+  amount column, no negative row and a `current` account warns that everything is money coming in (a warning only).
 - **Known limits**: a file with an unsigned amount and a separate direction column (debit/credit marker)
-  cannot be mapped (spec: no sign column), and would be read as all income; ask on the issue if a bank
-  needs it.  the store's identity is the reference, else a fingerprint of date, amount, counterparty
-  and description, so importing the same file again with a *different* mapping (for example the description
-  column changed, or the reference column added) can store the rows again. The header row is the first line that is
-  not blank.
+  cannot be mapped (spec: no sign column), and is read as all income (now with a warning on a current
+  account; ask on the issue if a bank needs it). The store's identity is the reference, else a fingerprint of
+  date, amount, counterparty and description, so importing the same file again with a *different* mapping can
+  still store the rows again: the owner is warned and must confirm, but nothing detects the duplicates across
+  fingerprints. The warning only knows the mapping saved at the last import that stored something: a first import
+  into an account, or one after a file that stored nothing, has nothing to compare with. The header row is the
+  first line that is not blank.
 - **Not done, on purpose**: bank presets, other formats (MT940, CAMT), categories, export, changing an
   account's source, importing into a manual account, a stale limit for the imported balance (its date and age
   are shown, as for manual balances), backing up `csv_mapping` (belongs to the backup issue).

@@ -73,12 +73,29 @@ public final class CsvFile {
      * {@code conflicts} (the store holds another transaction under that reference) is refused.
      */
     public static ParsedFile parse(byte[] bytes, CsvMapping mapping, LocalDate today, Predicate<DeliveredTransaction> conflicts) {
+        return read(bytes, mapping, today, conflicts, 0);
+    }
+
+    /**
+     * Reads only the first {@code maxRows} data rows (header and blank lines not counted): enough to tell whether
+     * a mapping fits a file, without reading the rest of a large one.
+     */
+    public static ParsedFile parseHead(byte[] bytes, CsvMapping mapping, LocalDate today, int maxRows) {
+        return read(bytes, mapping, today, t -> false, maxRows);
+    }
+
+    private static ParsedFile read(byte[] bytes, CsvMapping mapping, LocalDate today, Predicate<DeliveredTransaction> conflicts,
+            int maxRows) {
         if (!mapping.isComplete()) {
             throw new CsvImportException(CsvImportException.Reason.MAPPING_INCOMPLETE);
         }
         String text = decode(bytes, mapping.encoding());
-        Reader reader = new Reader(mapping, today, conflicts);
-        CsvParser.records(text, mapping.delimiter(), reader::accept);
+        Reader reader = new Reader(mapping, today, conflicts, maxRows);
+        try {
+            CsvParser.records(text, mapping.delimiter(), reader::accept);
+        } catch (StopReading done) {
+            // the rows asked for have been read
+        }
         return reader.result();
     }
 
@@ -124,11 +141,13 @@ public final class CsvFile {
         private final List<long[]> atNewest = new ArrayList<>(); // {record number, balance cents}
 
         private final Predicate<DeliveredTransaction> conflicts;
+        private final int maxRows; // 0: the whole file
 
-        Reader(CsvMapping mapping, LocalDate today, Predicate<DeliveredTransaction> conflicts) {
+        Reader(CsvMapping mapping, LocalDate today, Predicate<DeliveredTransaction> conflicts, int maxRows) {
             this.mapping = mapping;
             this.today = today;
             this.conflicts = conflicts;
+            this.maxRows = maxRows;
         }
 
         void accept(List<String> cells) {
@@ -151,6 +170,9 @@ public final class CsvFile {
                 read(cells);
             } catch (RowRefused e) {
                 refused.add(new RefusedRow(record, e.reason));
+            }
+            if (maxRows > 0 && rows >= maxRows) {
+                throw new StopReading();
             }
         }
 

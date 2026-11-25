@@ -14,7 +14,9 @@ public class CsvImportException extends RuntimeException {
         /** CSV files can only be imported into an account whose source is a CSV file. */
         NOT_CSV_ACCOUNT,
         /** The uploaded file is no longer held (the app restarted, or it waited too long): upload it again. */
-        UPLOAD_EXPIRED
+        UPLOAD_EXPIRED,
+        /** The mapping differs from the saved one on rows the account already holds, and the owner did not confirm. */
+        CONFIRMATION_REQUIRED
     }
 
     private final Reason reason;

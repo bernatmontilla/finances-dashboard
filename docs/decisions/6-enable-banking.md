@@ -192,7 +192,7 @@ shows it; `ITBD` is the in-day booked balance and is the fallback **[inf]**); `I
 "available" (they include credit limit or holds), `XPCD` is the expected balance. A bank may offer
 none of the booked types, then the app stores what it gets **with its type** and does not call it
 booked. `last_change_date_time` is optional: when absent, the age of the figure is the time of our
-fetch **[inf]**. The `name` is only a label: the reference's own example calls a `CLAV` balance
+fetch **[inf]** (shown as "fetched at"; `reference_date` is used when present). The `name` is only a label: the reference's own example calls a `CLAV` balance
 "Booked balance", so **decide by `balance_type`, never by `name`**.
 
 **Transactions** (`transactions-current-page1.json` and others): `{transactions:[…],
@@ -230,7 +230,7 @@ Only `transaction_amount`, `credit_debit_indicator` and `status` are mandatory [
 
 **Session** (`session-get-*.json`): `GET /sessions/{id}` → `status`, `accounts[]` (uids),
 `accounts_data[{uid, identification_hash}]`, `aspsp`, `psu_type`, `access.valid_until`, `created`,
-`authorized?`, `closed?`. `status` is `AUTHORIZED`, `EXPIRED`, `REVOKED` (by the user), `CLOSED`
+`authorized?`, `closed?`. `status` **[doc]** is `AUTHORIZED`, `EXPIRED`, `REVOKED` (by the user), `CLOSED`
 (by the application), `CANCELLED`, `INVALID`, `PENDING_AUTHORIZATION` or `RETURNED_FROM_BANK`.
 `DELETE /sessions/{id}` closes the session and "the PSU's bank consent … if possible" (this is
 *unlink*).
@@ -253,7 +253,7 @@ Only `transaction_amount`, `credit_debit_indicator` and `status` are mandatory [
   users"); the IBAN (or masked card number, BBAN) also matches. The user may also pick a different
   set of accounts in the renewal, so an account of the old consent may be missing in the new one.
   (`session-renewed.json` has new uids and the same hashes as `session-authorized.json`.)
-- Enable Banking recommends warning the user before `valid_until`.
+- Enable Banking recommends warning the user before `valid_until` **[doc]**.
 
 ## Does the plan of #10 hold?
 
@@ -279,7 +279,12 @@ Only `transaction_amount`, `credit_debit_indicator` and `status` are mandatory [
    one when the same fetch shows its booked counterpart (the fixture `transactions-current-second-
    sync.json` has a pending item that comes back booked, with a new `entry_reference`). This keeps
    the arch decision "stored as pending and replaced when booked, never counted twice" and
-   removes the assumption that the pending id survives.
+   removes the assumption that the pending id survives. Two details #10 must settle: (a) a pending
+   item has no id that survives booking, so it is matched to its booked counterpart by amount,
+   counterparty and description (the fixture shows the id changing), and **fields the owner
+   entered on the pending row move to the booked row** (hard rule 10); (b) the hash key needs an
+   occurrence counter (the nth identical hash in one fetch), else two genuine identical purchases
+   on one day collapse into one.
 5. **"Sync now" and the daily sync differ.** The scheduled sync sends no PSU headers and stays
    within about 4 fetches per account per day (a daily run is far below it; "Sync now" pressed many
    times is not); a 429 means "wait six hours" and is a normal failure of that account, not
@@ -288,7 +293,8 @@ Only `transaction_amount`, `credit_debit_indicator` and `status` are mandatory [
    address is accepted as `Psu-Ip-Address` [?].
 6. **Retries**: `ASPSP_ERROR`/timeouts are retried with growing intervals, not hammered.
 7. **Balances by `balance_type`** (booked = `CLBD`, fallback `ITBD`), with `last_change_date_time`
-   when present, our fetch time otherwise.
+   when present; else `reference_date` when present; else our fetch time, shown as "fetched at" and
+   not as "correct as of" (hard rule 9).
 8. **Business scope**: see the warning at the top; the plan assumes bank sync for business accounts
    which the Terms do not grant as personal use.
 9. **No logos** from the bank list (hard rule 7).
@@ -307,7 +313,7 @@ Only `transaction_amount`, `credit_debit_indicator` and `status` are mandatory [
 3. Which of the owner's banks appear in `GET /aspsps?country=NL`, with which `psu_types`, which
    `maximum_consent_validity` and which `required_psu_headers`.
 4. Which balance types each of the owner's accounts returns (`CLBD`?) and whether
-   `last_change_date_time` is filled.
+   `last_change_date_time` or `reference_date` is filled (else the age is only our fetch time).
 5. How far back `strategy=longest` reaches directly after the authorisation, and what a fetch an
    hour later gives (90 days?). Does `entry_reference` exist, for booked and for pending items,
    and does a pending item keep its id when booked?
@@ -341,6 +347,9 @@ IBAN, reference or amount; ids are obviously invented):
 | `transactions-current-second-sync.json` | the second sync: the same booked items again plus the pending one now booked |
 | `transactions-empty-with-continuation.json` | an empty page that still has a key |
 | `error-expired-session.json`, `error-rate-limit.json`, `error-psu-header-not-provided.json`, `error-redirect-not-allowed.json` | error bodies (`{message, code, error, detail?}`) |
+
+Some dates in the fixtures are later than the date of writing (2026-11-26 and -27): a test of #10
+uses a fixed clock. The PSU headers of a user fetch are the user's details: never log them.
 
 The files leave out fields the product does not use (postal addresses, agents, `payments` in the
 bank list); the reference marks them optional. The reference's own samples contain placeholder

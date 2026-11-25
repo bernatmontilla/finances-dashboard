@@ -447,7 +447,7 @@ public final class BackupService {
             throw e;
         } catch (Exception e) {
             if (!oldDatabasePutBack[0]) {
-                throw new BackupException(Reason.OLD_DATABASE_ASIDE, "The restore failed and the old database could not be put back. "
+                throw new BackupException(Reason.OLD_DATABASE_ASIDE, "The restore (or undo) failed and the database that was in use could not be put back. "
                         + "It is kept as " + replaced.getFileName() + " in the data folder: stop the service and see docs/install.md.", e);
             }
             if (e instanceof IOException || e instanceof SQLException) {

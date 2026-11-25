@@ -227,11 +227,21 @@ earlier restore could not finish tidying up: the file may hold data that exists 
 restore or undo is refused until you have looked at it. Keep it somewhere safe or delete it, with the
 service stopped.
 
-If a restore fails and the message says the old database could not be put back (a failing disk
-while undoing the restore), the old database is kept as `finances.replaced.db`, and nothing was
-deleted. Do not delete that file. Stop the service, then check that it holds your data (open a copy of
-it), move it over `finances.db` (`mv finances.replaced.db finances.db`, and delete the `finances.db-wal`
-and `finances.db-shm` files next to it first), and start the service.
+If a restore or an undo fails and the message says the database that was in use could not be put back,
+that database is kept as `finances.replaced.db` and nothing was deleted. Do not delete or overwrite
+any file before you have read this. Stop the service first (`systemctl --user stop finances-dashboard.service`);
+the `finances.db-wal` and `finances.db-shm` files next to `finances.db` belong to the half-finished
+database and may go. What to do depends on what you pressed:
+
+- **A restore failed**: `finances.db` holds the half-migrated copy of the backup (you still have the
+  backup file) and `finances.replaced.db` holds your data. Run
+  `rm -f finances.db-wal finances.db-shm && mv -f finances.replaced.db finances.db`, start the service.
+- **An undo failed**: `finances.db` holds the earlier database you were going back to, which may exist
+  nowhere else, and `finances.replaced.db` holds what was in use. Do not move anything over
+  `finances.db`. Run `rm -f finances.db-wal finances.db-shm && mv -n finances.db finances.previous.db &&
+  mv -n finances.replaced.db finances.db`, start the service: the earlier database is back under its own name
+  (the undo can be tried again, or the file kept) and your data is in use again. If `mv -n` says nothing and
+  `finances.previous.db` is still not there, stop and ask for help; do not delete anything.
 
 ## Where the logs are
 

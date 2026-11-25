@@ -40,3 +40,14 @@ format did not.
   uploaded zip itself is already on disk when the check runs; a general upload size limit is out of
   scope (spec).
 - No amount, name or path content is in the messages; the new texts are in `messages.properties`.
+
+## Known limits (from the risk check, not fixed here)
+
+- A restore into a data folder with no database, whose migration fails and whose half-migrated file cannot
+  be renamed back, still reports "the old database is back in use" although there was none; no data is at
+  risk (the half-migrated file is the only file, and the backup file is the owner's).
+- `DataFolder.recoverInterruptedRestore` puts `finances.replaced.db` back at the next start without looking
+  for journal files of another database. It needs three failures in a row (rename back, journal delete,
+  move back) and lives outside `finances/backup`; a follow-up issue if wanted.
+- `docs/install.md` has the recovery steps for a restore and for an undo, which differ: after a failed undo
+  `finances.db` holds the earlier database and must not be overwritten.

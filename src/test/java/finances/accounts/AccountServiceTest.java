@@ -193,11 +193,20 @@ class AccountServiceTest {
     }
 
     @Test
-    void anAccountWithNegativeBalancesCannotBecomeADebt() {
-        Account account = accounts.addManual("Everyday", Scope.PRIVATE, Kind.CURRENT, null);
-        accounts.addBalance(account.id(), eur("-5"), TODAY);
+    void anAccountWithBalancesCannotMoveAcrossTheDebtLineInEitherDirection() {
+        Account current = accounts.addManual("Everyday", Scope.PRIVATE, Kind.CURRENT, null);
+        Account debt = accounts.addManual("Loan", Scope.PRIVATE, Kind.DEBT, null);
+        accounts.addBalance(current.id(), eur("500"), TODAY);
+        accounts.addBalance(debt.id(), eur("500"), TODAY);
 
-        assertRefused(Reason.HAS_NEGATIVE_BALANCES, () -> accounts.update(account.id(), "Everyday", Scope.PRIVATE, Kind.DEBT, null));
+        assertRefused(Reason.KIND_CHANGE_HAS_BALANCES, () -> accounts.update(current.id(), "Everyday", Scope.PRIVATE, Kind.DEBT, null));
+        assertRefused(Reason.KIND_CHANGE_HAS_BALANCES, () -> accounts.update(debt.id(), "Loan", Scope.PRIVATE, Kind.CURRENT, null));
+        assertThat(accounts.get(current.id()).kind()).isEqualTo(Kind.CURRENT);
+        assertThat(accounts.get(debt.id()).kind()).isEqualTo(Kind.DEBT);
+        // Other kind changes keep working, and an account without balances may become a debt.
+        assertThat(accounts.update(current.id(), "Everyday", Scope.PRIVATE, Kind.SAVINGS, null).kind()).isEqualTo(Kind.SAVINGS);
+        Account empty = accounts.addManual("Empty", Scope.PRIVATE, Kind.CURRENT, null);
+        assertThat(accounts.update(empty.id(), "Empty", Scope.PRIVATE, Kind.DEBT, null).kind()).isEqualTo(Kind.DEBT);
     }
 
     @Test

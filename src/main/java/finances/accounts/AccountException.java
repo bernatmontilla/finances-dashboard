@@ -17,7 +17,7 @@ public class AccountException extends RuntimeException {
         NOT_MANUAL,
         ARCHIVED,
         DEBT_NEGATIVE,
-        HAS_NEGATIVE_BALANCES
+        KIND_CHANGE_HAS_BALANCES
     }
 
     private final Reason reason;

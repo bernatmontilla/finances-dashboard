@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.regex.Pattern;
-import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
@@ -60,7 +60,7 @@ public class AccountService {
             jdbc.sql("insert into account (name, scope, kind, source, iban, created_at) values (?, ?, ?, ?, ?, ?)")
                     .params(cleanName, scope.code(), kind.code(), Source.MANUAL.code(), cleanIban, Instant.now(clock).toString())
                     .update(key);
-        } catch (DuplicateKeyException e) {
+        } catch (DataIntegrityViolationException e) {
             throw new AccountException(AccountException.Reason.IBAN_DUPLICATE);
         }
         return get(key.getKey().longValue());
@@ -72,14 +72,16 @@ public class AccountService {
         String cleanName = cleanName(name);
         String cleanIban = cleanIban(iban);
         requireIbanFree(cleanIban, id);
-        if (kind == Kind.DEBT && current.kind() != Kind.DEBT && hasNegativeBalance(id)) {
-            throw new AccountException(AccountException.Reason.HAS_NEGATIVE_BALANCES);
+        // A saved balance means "owed" for a debt and "held" for anything else: moving an account across
+        // that line would silently turn a debt into an asset (or the reverse), so it is refused.
+        if ((kind == Kind.DEBT) != (current.kind() == Kind.DEBT) && hasBalance(id)) {
+            throw new AccountException(AccountException.Reason.KIND_CHANGE_HAS_BALANCES);
         }
         try {
             jdbc.sql("update account set name = ?, scope = ?, kind = ?, iban = ? where id = ?")
                     .params(cleanName, scope.code(), kind.code(), cleanIban, id)
                     .update();
-        } catch (DuplicateKeyException e) {
+        } catch (DataIntegrityViolationException e) {
             throw new AccountException(AccountException.Reason.IBAN_DUPLICATE);
         }
         return get(id);
@@ -210,8 +212,8 @@ public class AccountService {
         }
     }
 
-    private boolean hasNegativeBalance(long accountId) {
-        return jdbc.sql("select count(*) from balance where account_id = ? and amount_cents < 0")
+    private boolean hasBalance(long accountId) {
+        return jdbc.sql("select count(*) from balance where account_id = ?")
                 .param(accountId)
                 .query(Integer.class)
                 .single() > 0;

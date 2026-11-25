@@ -26,8 +26,20 @@
   new, corrected or removed balances until it is restored. A single balance entry can be removed,
   from its own correction page (a second step, so it is not an accident).
 - **Debt**: the entered amount is the amount owed and is shown as `Owes €…`, never as an available
-  balance. A negative amount owed is refused, and an account that has negative balances cannot be
-  changed to a debt. (Assumptions: the spec only says "entered as the amount owed".)
+  balance. A negative amount owed is refused. **An account that has any balance cannot change
+  between a debt and another kind** (`KIND_CHANGE_HAS_BALANCES`): the saved amounts would silently
+  change meaning, which matters once totals exist. An account without balances can change freely;
+  otherwise archive it and add a new one. (Assumptions: the spec only says "entered as the amount owed".)
+- **Removing a balance** is a real delete of that one entry, as the spec says ("corrected or
+  removed"); a correction replaces the amount and date in place. Accounts are never deleted.
+- **Dates and zones**: "today" is the date in the machine's time zone (`Clock.systemDefaultZone()`).
+  If the machine runs in UTC and the owner is elsewhere, a balance dated "today" can be refused as
+  future shortly after local midnight. A configurable zone is a new property and needs the owner.
+- **The same-site check is a mitigation, not full CSRF protection**: a request without the header
+  (curl, very old browsers) passes.
+- **Unknown pages** (`/accounts/999`) show `error.html` with a way back instead of raw JSON.
+- **For the lead**: `src/*/java/finances/web/**` is not in `.github/labeler.yml`, so a later PR that
+  only touches `SameOriginFilter` or `AccountsController` would get no review in CI. Consider adding it.
 - **Only manual accounts get typed balances**; `csv` and `bank` accounts refuse them in the domain
   (`NOT_MANUAL`), so a later sync owns its own balances. `Source` already has all three values and the
   schema accepts them.

@@ -238,6 +238,24 @@ class AccountsPagesTest {
     }
 
     @Test
+    void aChangeRequestWithoutAPageOfOursIsAcceptedButSameSiteIsNot() throws Exception {
+        Map<String, String> form = Map.of("name", "Header Check", "scope", "private", "kind", "current", "iban", "");
+
+        assertThat(post("/accounts", form, "Sec-Fetch-Site", "none").statusCode()).isEqualTo(302);
+        assertThat(post("/accounts", form, "Sec-Fetch-Site", "same-site").statusCode()).isEqualTo(403);
+    }
+
+    @Test
+    void anUnknownAccountShowsAPageWithAWayBackNotRawJson() throws Exception {
+        HttpResponse<String> response = CLIENT.send(
+                HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/accounts/99999")).header("Accept", "text/html").build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(404);
+        assertThat(response.body()).contains("Page not found").contains("Back to the accounts").doesNotContain("\"timestamp\"");
+    }
+
+    @Test
     void everyReasonTheDomainCanRefuseWithHasAMessage() throws IOException {
         Properties messages = new Properties();
         try (var in = Files.newBufferedReader(Path.of("src/main/resources/messages.properties"))) {

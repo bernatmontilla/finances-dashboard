@@ -16,7 +16,7 @@ Acceptance (checked by hand when the plan is done):
 - [ ] After the next release, the installation runs the new version without manual steps.
 - [ ] An update that fails halfway (no network, bad checksum) leaves the old version running.
 
-Plan issue: created when this round is approved.
+Plan issue: #13
 
 ## M1: accounts
 **Delivers**: linked bank accounts, manual accounts and CSV import, every balance and transaction
@@ -33,7 +33,7 @@ Acceptance:
 - [ ] Backup, wipe the data folder, restore: everything is back.
 - [ ] No token, IBAN or amount appears in the service's log.
 
-Plan issue: created when this round is approved.
+Plan issue: #14
 
 ## Later
 - M2 Free to spend: the after-tax source, the two headline numbers with their build-up,

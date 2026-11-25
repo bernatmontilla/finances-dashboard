@@ -7,10 +7,10 @@ file current; feature PRs never edit it.
 _Last updated: planning round 1_
 
 ## Now
-1. M0 walking skeleton (`docs/product/ROADMAP.md`): its plan issue holds the order of work.
-2. M1 accounts: issues are filed, its plan starts when M0 is accepted.
+1. M0 walking skeleton: plan #13 (issues #3 to #5).
+2. M1 accounts: plan #14 (issues #6 to #12); its first rows wait for #5.
 
 ## Waiting on the owner
-- Approve planning round 1 (this PR), then label the first rows of the M0 plan `idea`.
+- Merge planning round 1, then label #3 `idea` to start M0.
 - An endpoint that follows `docs/contracts/after-tax-source.md`; needed from M2.
 - An Enable Banking account and application; needed for the first row of M1.

@@ -92,3 +92,6 @@ table.preview th, table.preview td { border: 1px solid var(--line); padding: 0.2
 table.preview thead th { font-weight: 600; }
 label.check { display: flex; gap: 0.5rem; align-items: center; }
 label.check input { width: auto; }
+.bank-row > * { margin-right: 0.5rem; }
+.bank-row > form.inline { display: inline-block; margin-top: 0.25rem; }
+.nowrap { white-space: nowrap; }

@@ -272,7 +272,7 @@ Only `transaction_amount`, `credit_debit_indicator` and `status` are mandatory [
 3. **The first sync runs inside the link flow**, right after `POST /sessions`, with
    `strategy=longest` and `transactions_extended_history` left at its default; a later first sync
    may reach only 90 days. Subsequent syncs use `date_from` = last success minus the overlap.
-4. **Pending transactions have no reliable key.** Booked transactions are keyed by account plus
+4. **Pending transactions have no reliable key.** *(#10 decided the details differently: a booked delivery takes over the matching pending row by amount, counterparty and description within 7 days, and pending rows the bank stops reporting are removed or kept and marked; this replaces "replace the pending set" below. See `10-bank-sync.md`.)* Booked transactions are keyed by account plus
    `entry_reference`; when it is missing, or repeated inside one fetch, by the hash of date,
    amount, counterparty and description. **Pending ones are not keyed at all**: each sync replaces
    the account's pending set with the pending transactions it just received, and drops a pending

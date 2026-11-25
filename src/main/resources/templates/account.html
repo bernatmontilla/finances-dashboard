@@ -30,6 +30,32 @@
 
     <p th:if="${csv and !account.archived}"><a class="button" th:href="@{/accounts/{id}/import(id=${account.id})}" th:text="#{import.start}"></a></p>
 
+    <th:block th:if="${bank != null}">
+      <h2 th:text="#{bank.account.title}"></h2>
+      <p class="bank-row">
+        <a th:href="@{/settings/bank/consents/{id}(id=${bank.consentId})}" th:text="${bank.bankName}"></a>
+        <span th:if="${!bank.ended}" class="muted nowrap" th:text="#{bank.consent.validUntil(${bank.validUntil})}"></span>
+      </p>
+      <th:block th:if="${bank.ended}">
+        <p class="notice warning" th:text="#{bank.consent.expired}"></p>
+        <p class="nowrap muted" th:text="#{bank.consent.wasValidUntil(${bank.validUntil})}"></p>
+        <form method="post" th:action="@{/settings/bank/consents/{id}/renew(id=${bank.consentId})}">
+          <p class="actions"><button type="submit" th:text="#{bank.renew}"></button></p>
+        </form>
+      </th:block>
+      <p th:if="${bank.hasBalance()}" class="bank-row">
+        <strong th:text="#{${bank.balanceKey}(${bank.balanceAmount}, ${bank.balanceType})}"></strong>
+        <strong th:if="${bank.ended}" class="error" th:text="#{bank.balance.stale}"></strong>
+        <span class="muted" th:text="#{${bank.basisKey}(${bank.basisWhen})}"></span>
+      </p>
+      <p th:if="${bank.hasLastRun()}" class="bank-row">
+        <span class="muted" th:text="${bank.lastRun.when}"></span>
+        <span class="muted" th:text="#{${bank.lastRun.triggerKey}}"></span>
+        <strong th:if="${bank.lastRun.ok}" th:text="#{bank.run.ok}"></strong>
+        <strong th:unless="${bank.lastRun.ok}" class="error" th:text="#{bank.run.failed(#{${bank.lastRun.reasonKey}})}"></strong>
+      </p>
+    </th:block>
+
     <h2 th:text="#{balances.title}"></h2>
     <p th:replace="~{fragments :: error}"></p>
     <th:block th:if="${manual and !account.archived}">

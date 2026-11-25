@@ -21,6 +21,7 @@
       <strong th:if="${debt}" class="amount owed" th:text="#{balance.owed(${view.amount})}"></strong>
       <span class="muted" th:text="#{balance.asOf(${view.date})}"></span>
       <span class="muted" th:text="#{${view.ageKey}(${view.ageDays})}"></span>
+      <span th:if="${view.hasNote()}" class="muted" th:text="#{${view.noteKey}(${view.noteArg})}"></span>
     </span>
   </span>
 
@@ -41,6 +42,7 @@
           <span th:text="${row.date}"></span>
           <a th:if="${showAccount}" th:href="@{/accounts/{id}(id=${row.accountId})}" th:text="${row.accountName}"></a>
           <span th:if="${row.pending}" class="pending" th:text="#{transactions.pending}"></span>
+          <span th:if="${row.noLongerReported}" class="pending" th:text="#{transactions.noLongerReported}"></span>
         </span>
         <span class="who">
           <strong th:if="${row.hasCounterparty()}" th:text="${row.counterparty}"></strong>

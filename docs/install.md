@@ -162,11 +162,89 @@ you may read it (`chmod 700`), and updates never touch it.
 | `finances.replaced.db` | only for a moment during a restore; see below | no |
 | `finances.lock` | lets only one instance use the folder | no |
 | `tmp/` | uploads and backups in the making; emptied at every start, never web-visible | no |
-| secret files | the bank application key, bank session ids, the after-tax token | **no, on purpose** |
+| `secrets/enable-banking-application-id` | the id of your Enable Banking application (you put it there) | **no, on purpose** |
+| `secrets/enable-banking-key.pem` | the application's private key (you put it there) | **no, on purpose** |
+| `secrets/enable-banking-session-<n>` | the session id of bank consent `<n>`, written by the app | **no, on purpose** |
+| secret files still to come | the after-tax token | **no, on purpose** |
 
 The secret files are plain files in the data folder, readable by the service user only, never in a
-log and never in a backup file. Each issue that adds one lists it in this table. Today there are
-none; the bank link adds its files in the next steps of the plan.
+log and never in a backup file. Each issue that adds one lists it in this table.
+
+## Linking your banks (Enable Banking)
+
+Optional: the dashboard is fully usable with CSV import and manual balances. To have balances and
+transactions fetched by themselves, the dashboard reads your accounts, **read only**, through Enable
+Banking (the application asks for balances and transactions and has no code that could start a
+payment). Enable Banking is free for your own accounts, but only for **personal use**: its terms
+do not cover business accounts, which should keep CSV import or manual entry.
+
+Nothing here is specific to an installation: `<host>`, `<application id>` and 8080 are placeholders.
+
+1. **Create an application.** In the Enable Banking control panel (find it from enablebanking.com) register an
+   account, then a **production** application. Registration asks for a description, a data-protection
+   e-mail address, a privacy-policy address and a terms address: for an application that only links your own
+   accounts these are not checked, fill in anything valid. Generate a key and a certificate, upload the
+   **certificate**, and note the **application id** (a UUID). With OpenSSL, for example:
+
+   ```bash
+   openssl req -x509 -newkey rsa:4096 -nodes -keyout enable-banking-key.pem -out certificate.pem \
+     -days 730 -subj "/CN=finances-dashboard"
+   ```
+
+   The key file may be the old form (`BEGIN RSA PRIVATE KEY`) or the new one (`BEGIN PRIVATE KEY`); both work.
+   Keep the key file to yourself: it, with a session id, reads your accounts.
+
+2. **Register the redirect address.** After you give consent at your bank, your browser is sent back to the
+   dashboard. Register `http://<host>:8080/settings/bank/callback` (the address you open the dashboard with, with
+   the port of `SERVER_PORT`) as a redirect address of the application, and tell the dashboard the same in
+   `~/.config/finances-dashboard/env`:
+
+   ```
+   FINANCES_SYNC_REDIRECT_URL=http://<host>:8080/settings/bank/callback
+   ```
+
+   **Not yet tried:** whether Enable Banking accepts a plain `http` address, a private name or `localhost` as a redirect
+   address is not stated in its documentation. This is the first thing to try. If it refuses, there is nothing to work
+   around it yet: say so on the issue tracker.
+
+3. **Link your own accounts in the control panel.** In the application, use *Activate by linking accounts* and
+   link every account the dashboard should fetch. Only accounts linked there come back through the dashboard; any other
+   account is silently left out, and the dashboard then says that the bank returned no accounts.
+
+4. **Put the two files in place** (the data folder is the one of step 1 of the first install):
+
+   ```bash
+   mkdir -p ~/finances-dashboard/data/secrets
+   chmod 700 ~/finances-dashboard/data/secrets
+   install -m 600 enable-banking-key.pem ~/finances-dashboard/data/secrets/enable-banking-key.pem
+   printf '%s\n' '<application id>' > ~/finances-dashboard/data/secrets/enable-banking-application-id
+   chmod 600 ~/finances-dashboard/data/secrets/enable-banking-application-id
+   systemctl --user restart finances-dashboard.service
+   ```
+
+   *Settings*, *Bank connection* now says an application is configured. It never shows the id or the key.
+
+5. **Link a bank.** *Settings*, *Bank connection*, *Link a bank*: choose the country and the bank from the list Enable
+   Banking offers, give consent at the bank, and come back to a page that lists the accounts the consent covers. For each,
+   create a new account (you choose name, scope and kind) or attach it to an existing account without a bank link
+   (an account with the same IBAN is proposed; its history stays). Nothing is created until you confirm, and the first
+   sync starts at once: do it **within the hour**, because banks give the full history only for about an hour after the
+   consent (later fetches often reach back 90 days only). Accounts in another currency than the euro are listed as not supported.
+
+6. **What runs by itself.** A daily sync at `FINANCES_SYNC_TIME` (HH:mm, default `04:30`, your time zone) and *Sync now* on
+   the overview. Both fetch what is new since the last successful sync, with an overlap of `FINANCES_SYNC_OVERLAP_DAYS`
+   days (default 7). The daily sync is a *background* fetch: many banks allow about four a day per account, and answer
+   a rate-limited fetch with an error, which the settings page lists as such (wait about six hours). *Sync now* sends your
+   browser's own details to the bank, as a person using the page, when the bank's required headers can all be sent. The
+   settings page lists the last runs per account: when, which kind, how it ended and what it stored. `FINANCES_SYNC_ENABLED=false`
+   switches the daily run off.
+
+7. **Consent lasts at most 180 days** (less at some banks). Before it ends, or after, the account shows *consent expired*
+   and keeps all its history; *Renew* runs the authorisation again and re-attaches the same accounts. *Unlink* removes the
+   consent and turns the accounts into accounts entered by hand, keeping their history.
+
+The secret files are **not in a backup**. After restoring on another machine the consents show *consent expired*: renew
+them, or copy the files of the table above by hand.
 
 ## Backup and restore
 

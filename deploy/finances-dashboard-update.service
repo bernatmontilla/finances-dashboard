@@ -1,0 +1,10 @@
+# Template: the update job (docs/install.md). Started by finances-dashboard-update.timer.
+# Copy to ~/.config/systemd/user/ together with the timer, and update.sh to ~/finances-dashboard/update.sh.
+[Unit]
+Description=Update the personal finances dashboard to the latest release
+
+[Service]
+Type=oneshot
+EnvironmentFile=-%h/.config/finances-dashboard/env
+ExecStart=%h/finances-dashboard/update.sh
+TimeoutStartSec=30min

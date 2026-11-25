@@ -1,0 +1,12 @@
+# Template: runs the update job once a day, at a random moment within two hours, and once after a
+# start if a run was missed because the machine was off.
+[Unit]
+Description=Daily check for a new finances dashboard release
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=2h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

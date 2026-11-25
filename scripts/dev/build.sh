@@ -4,6 +4,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
+bash scripts/dev/test-update.sh
+
 ./mvnw -B -ntp verify
 
 test -f target/finances-dashboard.jar

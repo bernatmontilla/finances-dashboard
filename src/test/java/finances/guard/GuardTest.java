@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -139,5 +140,43 @@ class GuardTest {
         assertThat(workflow).contains("permissions: {}").contains("contents: write");
         assertThat(workflow.split("contents: write", -1)).as("contents: write on the release job only").hasSize(2);
         assertThat(workflow).doesNotContain("pull-requests: write").doesNotContain("write-all");
+    }
+
+    @Test
+    void deployFilesAndTheInstallGuideHoldOnlyPlaceholders() throws IOException {
+        // Issue #5, hard rule 1: templates only, no real installation's home path, host or address.
+        Pattern homePath = Pattern.compile("/home/|/Users/|/root\\b|[A-Za-z]:\\\\Users");
+        Pattern address = Pattern.compile("\\b\\d{1,3}(\\.\\d{1,3}){3}\\b");
+        Pattern url = Pattern.compile("https?://([^/\\s\"'`):]+)", Pattern.CASE_INSENSITIVE);
+        Pattern tailnet = Pattern.compile("[A-Za-z0-9-]\\.(ts\\.net|local|lan|home)\\b", Pattern.CASE_INSENSITIVE);
+        Set<String> allowedHosts = Set.of("api.github.com", "github.com", "localhost", "127.0.0.1", "example.com",
+                "tailscale.com", "systemd.io", "<host>");
+        List<Path> all = new ArrayList<>(files(Path.of("deploy")));
+        all.add(Path.of("docs/install.md"));
+        all.add(Path.of("scripts/dev/test-update.sh"));
+        List<String> found = new ArrayList<>();
+        for (Path file : all) {
+            List<String> lines = Files.readAllLines(file);
+            for (int i = 0; i < lines.size(); i++) {
+                String line = lines.get(i);
+                String where = file + ":" + (i + 1) + ": " + line.strip();
+                if (homePath.matcher(line).find() || tailnet.matcher(line).find()) {
+                    found.add(where);
+                }
+                Matcher ip = address.matcher(line);
+                while (ip.find()) {
+                    if (!ip.group().equals("127.0.0.1")) {
+                        found.add(where);
+                    }
+                }
+                Matcher host = url.matcher(line);
+                while (host.find()) {
+                    if (!allowedHosts.contains(host.group(1).toLowerCase())) {
+                        found.add(where);
+                    }
+                }
+            }
+        }
+        assertThat(found).as("an absolute home path, a real host or an address in deploy/ or docs/install.md").isEmpty();
     }
 }

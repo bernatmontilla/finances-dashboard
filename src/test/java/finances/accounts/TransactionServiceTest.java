@@ -532,6 +532,59 @@ class TransactionServiceTest {
         assertThat(count()).isEqualTo(3);
     }
 
+    private static DeliveredTransaction pendingDatedByFetch(LocalDate fetchDay, long cents, String counterparty, String description) {
+        return new DeliveredTransaction(fetchDay, null, cents, "EUR", counterparty, SHOP_IBAN, description,
+                TransactionStatus.PENDING, null, "raw:pending:" + description, true);
+    }
+
+    @Test
+    void aPendingRowDatedByTheFetchDayIsAlsoTakenOverByABookedDateUpToTheNamedNumberOfDaysEarlier() {
+        int days = TransactionService.PENDING_TAKEOVER_DAYS;
+
+        // Booked exactly the limit before the day it was first seen: the same purchase.
+        deliverBank(pendingDatedByFetch(DAY, -800, "Example Gym", "Day pass"));
+        long id = stored().getFirst().id();
+        assertThat(deliverBank(booked(DAY.minusDays(days), -800, "Example Gym", "Day pass", "B1"))).isEqualTo(new DeliveryReport(0, 1, 0, 0));
+        assertThat(stored()).singleElement().satisfies(t -> {
+            assertThat(t.id()).isEqualTo(id);
+            assertThat(t.bookingDate()).isEqualTo(DAY.minusDays(days));
+        });
+
+        // One day further back than the limit: another purchase.
+        deliverBank(pendingDatedByFetch(DAY, -900, "Example Gym", "Day pass"));
+        assertThat(deliverBank(booked(DAY.minusDays(days + 1), -900, "Example Gym", "Day pass", "B2"))).isEqualTo(new DeliveryReport(1, 0, 0, 0));
+        assertThat(count()).isEqualTo(3);
+    }
+
+    @Test
+    void aPendingRowDatedByTheFetchDayStillTakesTheLaterDatesTheOldRuleTook() {
+        deliverBank(pendingDatedByFetch(DAY, -800, "Example Gym", "Day pass"));
+
+        assertThat(deliverBank(booked(DAY.plusDays(TransactionService.PENDING_TAKEOVER_DAYS), -800, "Example Gym", "Day pass", "B1")))
+                .isEqualTo(new DeliveryReport(0, 1, 0, 0));
+        assertThat(count()).isEqualTo(1);
+    }
+
+    @Test
+    void theWiderWindowNeedsTheSameAmountCounterpartyAndDescriptionAndNeverAppliesToADatedPendingRow() {
+        deliverBank(pendingDatedByFetch(DAY, -800, "Example Gym", "Day pass"), pending(DAY, -900, "Example Gym", "Day pass"));
+
+        assertThat(deliverBank(booked(DAY.minusDays(2), -801, "Example Gym", "Day pass", "B1")).added()).isEqualTo(1);
+        assertThat(deliverBank(booked(DAY.minusDays(2), -800, "Example Telecom", "Day pass", "B2")).added()).isEqualTo(1);
+        assertThat(deliverBank(booked(DAY.minusDays(2), -800, "Example Gym", "Month pass", "B3")).added()).isEqualTo(1);
+        // The bank dated this pending row itself: a booked date before it is another purchase, as before.
+        assertThat(deliverBank(booked(DAY.minusDays(2), -900, "Example Gym", "Day pass", "B4")).added()).isEqualTo(1);
+
+        assertThat(stored()).filteredOn(Transaction::pending).hasSize(2);
+    }
+
+    @Test
+    void aBookedRowIsNeverMarkedAsDatedByTheFetch() {
+        deliverBank(new DeliveredTransaction(DAY, null, -800, "EUR", "Example Gym", SHOP_IBAN, "Day pass", TransactionStatus.BOOKED, "B1", "raw", true));
+
+        assertThat(jdbc.sql("select dated_by_fetch from transactions").query(Integer.class).single()).isZero();
+    }
+
     @Test
     void aPendingRowDatedAfterTheBookingDateIsAnotherPurchase() {
         deliverBank(pending(DAY.plusDays(1), -800, "Example Gym", "Day pass"));

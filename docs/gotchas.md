@@ -55,6 +55,7 @@ mention the test here.
   transactions page can still carry a `continuation_key`, and the other parameters must stay equal.
 - `POST /sessions` returns account details only once; store IBAN, name and currency then.
 - The bank list returns logo URLs on another host; never load them in a page (hard rule 7).
+- A user's address behind a reverse proxy is the proxy's (loopback): `Psu-Ip-Address` is left out for loopback, link-local and unspecified addresses, and a bank that requires it then gets a background fetch (`BankViews.personsAddress`, #39).
 - Secrets are files in `<data>/secrets/` (application id, key, one session file per consent), never in the
   database or a backup. A consent row without its session file means "restored on another machine": it is
   treated as expired. A new secret file goes in the table of `docs/install.md`.

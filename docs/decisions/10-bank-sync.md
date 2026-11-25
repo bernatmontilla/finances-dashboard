@@ -13,7 +13,7 @@ FakeEnableBanking.java`). Trying it with a real account is the owner's acceptanc
   `BankMapping` (JSON to values), `BankStore` (SQL), `SessionFiles` (secret session ids), `BankStatus` (what pages read).
 - `finances.accounts`: `TransactionService.deliverFromBank` and the takeover rule, `AccountService.addFromBank / attachToBank /
   detachFromBank / addBankBalance / latestBankBalance`.
-- Migration `V5__bank_link.sql` (V4 is in open pull request 31; if the numbers collide after a rebase, renumber this one).
+- Migration `V5__bank_link.sql` (V4 is in open pull request 31; if the numbers collide after a rebase, renumber this one). Issue #39 added `V6__bank_sync_follow_ups.sql`.
 
 ## Decisions
 
@@ -90,3 +90,34 @@ FakeEnableBanking.java`). Trying it with a real account is the owner's acceptanc
 - The store step re-checks the link (`markSuccess` only when consent, uid, account and last success are unchanged): a restore, unlink or renewal during a fetch stores nothing (`store_failed`).
 - A second confirmation of the same offered account rolls back (no orphan account).
 - Merge order: V5 skips V4 of pull request 31; merge 31 first, and renumber the later one if the order is ever reversed (Flyway refuses a lower version that was never applied).
+
+## Follow-ups from the review of the bank sync (issue #39)
+
+The review in CI passed pull request 36 and left four findings it was not sure about. Each was checked with a test first; all four held.
+
+1. **Amount signs** (`BankMapping.transaction`). Held: a negative amount string made every fetch of that account fail. The
+   reference documents unsigned amounts with `credit_debit_indicator` (`6-enable-banking.md`, section 5; no fixture has a sign), so
+   the unsigned form stays the one that is expected. A sign that **agrees** with the indicator (`-12.34` with `DBIT`, `+12.34` with
+   `CRDT`) says the same thing twice and is accepted. A sign that **contradicts** it is refused as that one transaction
+   (`BankMapping.Contradiction`, no message): it is counted in the run's `refused` and the rest of the batch is stored. Never a
+   guess. `BankMapping.cents` itself still takes only unsigned text, and anything else that cannot be read still fails the whole
+   fetch. A refused item is never stored, so the pending-row removal (which only looks at rows that exist) is unaffected.
+2. **Loopback address** (`BankViews.userHeaders`). Held: behind `tailscale serve` the remote address is the loopback address and
+   it went out as `Psu-Ip-Address`. Now no such header goes out when the address is loopback, link-local or unspecified (also
+   IPv4-mapped ones), or is not a literal IP address (nothing is looked up). Forwarded headers are still not trusted. Consequence,
+   by the existing all-or-none rule: a bank that lists `Psu-Ip-Address` as required gets none of the headers, so that "Sync now"
+   is a background fetch and the settings page says so ("the bank wants headers that cannot be sent"). The wording on the page was
+   already there; the daily limit of a background fetch applies.
+3. **A pending row dated by the day of the fetch** (`TransactionService.pendingToTakeOver`). Held: such a row, booked under a new
+   reference with an earlier date, stayed next to the booked one. The fact is now recorded: `transactions.dated_by_fetch` (migration
+   V6, default 0), set when a pending bank item had no booking, transaction or value date (`BankMapping.undatedPending`; the row keeps
+   the flag when `pendingBankDate` gave it its first-seen day). For such rows the window is `PENDING_TAKEOVER_DAYS` days on both
+   sides of the booking date (before: only the days before it). Every other rule (amount, counterparty, description, oldest first,
+   not a row of this batch) is unchanged; a pending row the bank dated itself keeps the old, one-sided window. Rows stored before
+   V6 have 0, so they keep the old rule. The flag is written when a row is inserted and never changed.
+4. **Session files** (`SessionFiles`). Held: the file was keyed by the consent id only. Each session file now has a companion
+   `enable-banking-session-<id>.tag` with a random tag, and the same tag is in `bank_consent.session_tag`; a file is read only when
+   the two agree, else the consent shows as needing *Renew*. The tag is a separate file so the session file keeps holding just the
+   session id (as before). The tag file is written first. A consent made before V6 has no tag and no tag file, and those two agree,
+   so an installation keeps working after the update; the one case this leaves open is a consent without a tag (a backup older than
+   V6, restored) next to a leftover file without a tag: that pair is still taken as a match.

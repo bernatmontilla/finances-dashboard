@@ -164,8 +164,10 @@ class BankPagesTest {
         HttpResponse<String> syncNow = post("/sync", Map.of());
         assertThat(location(syncNow)).startsWith("/?sync=done");
         assertThat(get(location(syncNow)).body()).contains("Accounts synced: 1.");
+        // The test's own client is on the loopback address, which is no address of a person (issue #39): the bank lists
+        // Psu-Ip-Address as required, so the fetch goes without any of the headers.
         String runs = get("/settings").body();
-        assertThat(runs).contains("Last sync runs").contains("Sync now, online fetch").contains("synced").contains("Example Bank")
+        assertThat(runs).contains("Last sync runs").contains("Sync now, background fetch (the bank wants headers that cannot be sent)").contains("synced").contains("Example Bank")
                 .contains("Accounts linked: 1").contains("Waiting for confirmation: 1");
         assertThat(post("/sync", Map.of()).statusCode()).isEqualTo(302);
         HttpResponse<String> crossSite = CLIENT.send(HttpRequest.newBuilder(uri("/sync")).header("Sec-Fetch-Site", "cross-site")

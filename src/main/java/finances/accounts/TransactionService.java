@@ -201,12 +201,12 @@ public class TransactionService {
             jdbc.sql("""
                             insert into transactions (account_id, booking_date, value_date, amount_cents, counterparty_name,
                                 counterparty_iban, description, status, source, reference, fingerprint, occurrence, raw,
-                                first_seen_at, last_seen_at)
-                            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                first_seen_at, last_seen_at, dated_by_fetch)
+                            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """)
                     .params(accountId, fields.bookingDate(), fields.valueDate(), fields.amountCents(), fields.counterpartyName(),
                             fields.counterpartyIban(), fields.description(), fields.status(), fields.source(), fields.reference(),
-                            fingerprint, occurrence, fields.raw(), now, now)
+                            fingerprint, occurrence, fields.raw(), now, now, t.datedByFetch() && t.status() == TransactionStatus.PENDING ? 1 : 0)
                     .update(key);
             tally.touched.add(key.getKey().longValue());
             tally.added++;
@@ -266,17 +266,20 @@ public class TransactionService {
      * The one rule for a pending transaction that arrives as booked under a new reference: it is the oldest
      * pending transaction of the same account with the same amount, the same counterparty and the same
      * description (normalised), dated on or before the booking date and at most
-     * {@link #PENDING_TAKEOVER_DAYS} days before it. A row this batch already delivered or matched is never
-     * taken over: the bank lists it as a transaction of its own, so an identical second purchase stays a second
-     * row. The row keeps its identity, and with it the owner's note.
+     * {@link #PENDING_TAKEOVER_DAYS} days before it. A pending row whose date is only the day it was fetched (the bank
+     * gave it none: {@code dated_by_fetch}) may also be dated up to that many days <em>after</em> the booking date,
+     * because the real date of the purchase can be before the day it was first seen. A row this batch already delivered
+     * or matched is never taken over: the bank lists it as a transaction of its own, so an identical second purchase
+     * stays a second row. The row keeps its identity, and with it the owner's note.
      */
     private Stored pendingToTakeOver(long accountId, Fields booked, Set<Long> touched) {
         LocalDate date = LocalDate.parse(booked.bookingDate());
         String counterparty = normalise(booked.counterpartyName());
         String description = normalise(booked.description());
         return jdbc.sql(STORED + " where account_id = ? and status = 'pending' and amount_cents = ? and booking_date >= ?"
-                        + " and booking_date <= ? order by booking_date, occurrence, id")
-                .params(accountId, booked.amountCents(), date.minusDays(PENDING_TAKEOVER_DAYS).toString(), date.toString())
+                        + " and (booking_date <= ? or (dated_by_fetch = 1 and booking_date <= ?)) order by booking_date, occurrence, id")
+                .params(accountId, booked.amountCents(), date.minusDays(PENDING_TAKEOVER_DAYS).toString(), date.toString(),
+                        date.plusDays(PENDING_TAKEOVER_DAYS).toString())
                 .query(TransactionService::stored)
                 .list()
                 .stream()

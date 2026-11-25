@@ -5,8 +5,11 @@ review in CI (`.github/workflows/claude-review.yml`). The full rules are in `AGE
 
 ## Comment in this order, blocking issues first
 
-1. **TODO: the worst thing that can go wrong in this project** (for example "the books could become
-   wrong", "a user's data could be lost"). Make this line concrete once you know.
+1. **A wrong or silently outdated amount, lost owner input, or money data leaving the machine.**
+   An amount that could be shown wrong, twice or as current when it is stale; a sync, import,
+   restore or migration that could overwrite what the owner entered; any request to a host the
+   installer did not configure; anything that could start a payment; a token, IBAN or amount in a
+   log (`AGENTS.md`, hard rules 6 to 11).
 2. **Security**: authentication, permission scopes, data leaving the system, secrets in code.
 3. **Real data in the repository**: real names, addresses, emails, account numbers in tests,
    comments or docs. Only the fictional set in `AGENTS.md` is allowed.

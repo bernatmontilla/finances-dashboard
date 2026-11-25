@@ -4,14 +4,17 @@ This is the single source of instructions for every AI working on this repositor
 imports it; other agents (Gemini, Codex) read `AGENTS.md` themselves. Change rules here, never in a
 tool-specific file.
 
-<!-- TEMPLATE: fill in every TODO, delete the hints, keep it short. A rule that is really a
-     procedure belongs in a skill; a fact that only matters for one area belongs in docs/gotchas.md. -->
-
 ## What this is
 
-TODO: one paragraph. What the app does, for whom, the stack (language, framework, database, build
-tool), where it runs. Then the one thing that beats everything else here (for example
-"correctness of the data", "never lose a user's file", "the API stays backwards-compatible").
+A self-hosted personal finances dashboard for one person: bank balances and transactions
+(Enable Banking, CSV or by hand), what is really free to spend after taxes and reservations,
+categorised spending, fixed costs, budgets, savings, investments and debt. Java 25, Spring Boot,
+Thymeleaf, SQLite with Flyway, Maven; one jar run as a systemd service on a small low-memory machine (a
+single-board computer is the reference target), bound to localhost and published on a private
+network.
+The repository is public and holds code only. What beats everything else: **the numbers shown
+are right and honestly dated, and nobody's real financial data or setup ever reaches this
+repository.**
 
 Read first, every session (short on purpose; read the rest only when the work needs it):
 - The issue you work on: it is your spec.
@@ -68,8 +71,8 @@ The order of the steps is in [docs/workflow.md](docs/workflow.md).
 bash scripts/dev/build.sh       # what CI runs; must pass locally before a PR is marked ready
 ```
 
-TODO: also the command to run one test class or file while drafting, and how long the full build
-takes.
+One test class while drafting: `./mvnw -q test -Dtest=ClassName`. The full build should stay
+under three minutes; say so in the PR if a change makes it slower. (Both exist from M0 on.)
 
 If your environment cannot download the dependencies, push, mark the PR ready (a draft gets no CI)
 and let CI be the compiler; say so in the PR description. Never mark work as done while CI is red.
@@ -87,19 +90,45 @@ Use the `explorer` subagent for searches across many files, so your own context 
 2. **No new dependencies** without the owner's explicit approval in the issue or PR.
 3. **Never change, loosen or delete an existing assertion** to get a green build, unless the spec
    changes that behaviour; say so in the PR.
-4. **Keep what other things depend on**: TODO list public APIs, URLs, file formats, ports. Change
-   them only backwards-compatibly, and say so in the PR.
+4. **Keep what other things depend on**: the after-tax contract
+   (`docs/contracts/after-tax-source.md`), merged database migrations (never edited, only added),
+   the backup file format (an older backup always restores), the release asset names
+   `finances-dashboard.jar` and `.sha256` that `deploy/update.sh` fetches, the health endpoint,
+   the configuration property names and the layout of the data folder. Change them only
+   backwards-compatibly, and say so in the PR.
 5. Do not touch deployment, `.github/workflows/` or `.claude/` unless the issue is about it.
-6. TODO: the rules of this domain (for example "money is integer cents", "migrations are never
-   edited once merged", "times are stored in UTC").
+6. **Read-only**: no code that moves money or starts a payment, and no payment scope requested
+   from a bank API.
+7. **Nothing leaves the machine** except through `finances.outbound`, to the hosts the installer
+   configured (Enable Banking, the after-tax source, the notification channel). No telemetry; no
+   font, script, stylesheet or image loaded from another host.
+8. **Money is integer cents (`long`) with a currency**: never `double`, `float` or decimal
+   arithmetic on amounts. Euro only; another currency is refused, not converted. Times are stored
+   in UTC, booking dates as plain dates.
+9. **No figure without its age**: every amount that comes from a source is shown with when it was
+   last correct, and as stale when the source failed, expired or is too old.
+10. **What the owner entered is never lost or overwritten** by a sync, an import, a restore of the
+    same data or a migration; reading the same data twice stores nothing twice.
+11. **Secrets and amounts stay out of logs and error messages**: no token, key, IBAN, counterparty
+    or amount is logged. Secrets are read from the data folder only.
+
+The same six product invariants are in `docs/product/PRODUCT.md`; rules 6 to 11 are how they
+bind the code.
 
 ## Fictional test data (use these)
 
 | What | Value |
 |---|---|
-| TODO | TODO |
+| The owner of an installation | Sam Voorbeeld |
+| Other people | Robin Example, Alex Sample |
+| Banks | Example Bank, Sample Savings Bank (never a real bank name in tests or fixtures) |
+| Own IBANs | `NL51XMPL0000000001` (private current), `NL24XMPL0000000002` (private savings), `NL94XMPL0000000003` (business current), `NL67XMPL0000000004` (loan) |
+| Counterparty IBANs | `NL10SHOP0000000101`, `NL80SHOP0000000102`, `NL53SHOP0000000103` |
+| Counterparties | Corner Grocery, Example Energy, Example Telecom, Example Insurance, Example Landlord, Example Gym, Example Client BV |
+| Amounts | round, obviously invented (for example 12.34, 100.00, 1,234.56) |
+| Hosts and paths | `<host>`, `~`, `example.com`, port 8080 in examples only |
 | Emails | anything `@example.com` |
-| Public names | TODO: which real names may stay (for example banks, towns) and which never (people, shops, streets) |
+| Public names | Real names may stay only where the product is about them: Enable Banking, Tailscale, GitHub, systemd. Never a real person, bank, shop, employer, client, street, town, host name or user name. |
 
 ## Code conventions
 
@@ -109,7 +138,15 @@ Use the `explorer` subagent for searches across many files, so your own context 
   library, then a dependency that is already installed, then the least code that works.
 - A rule that can be checked by reading files (no inline scripts, no real data in docs, every
   text in every language) gets a guard test, so the build enforces it instead of the review.
-- TODO: where domain logic lives, naming, i18n, anything a reviewer would otherwise repeat.
+- Domain rules live in the domain packages under `finances` (`money`, `accounts`, `sync`,
+  `importing`, `backup`), never in controllers or templates. A calculation that ends up on a
+  page has a unit test that does not start the web layer.
+- Every text a user sees is in `messages.properties` (English), never in a template or in Java;
+  a guard test enforces it.
+- Every page works at phone width (360 px) without horizontal scrolling, and with the browser's
+  dark mode.
+- The words of `docs/product/PRODUCT.md` (*scope*, *kind*, *source*, *reservation*, *stale* …)
+  are the names in code, issues and the interface. Do not invent synonyms.
 
 ## Reviewing a PR (any AI)
 

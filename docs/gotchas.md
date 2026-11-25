@@ -14,7 +14,7 @@ mention the test here.
 
 ## The target machine
 
-- 2 GB RAM shared with other JVMs: the heap cap is real. Stream large result sets.
+- Low memory, possibly shared with other services: the heap cap is real. Stream large result sets.
 - arm64: a dependency with native code (sqlite-jdbc) must ship an aarch64 Linux binary.
 
 ## Tests and CI

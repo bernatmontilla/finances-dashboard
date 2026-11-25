@@ -12,6 +12,5 @@ _Last updated: planning round 1_
 
 ## Waiting on the owner
 - Approve planning round 1 (this PR), then label the first rows of the M0 plan `idea`.
-- Build the after-tax endpoint in the bookkeeping tool (`docs/contracts/after-tax-source.md`);
-  needed from M2.
-- Create an Enable Banking account and application; needed for the first row of M1.
+- An endpoint that follows `docs/contracts/after-tax-source.md`; needed from M2.
+- An Enable Banking account and application; needed for the first row of M1.

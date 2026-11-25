@@ -1,72 +1,82 @@
 # Product
 
-One page. What this is and is not, in the owner's words. Written in a planning round (skill
-`plan-product`), changed only in one. `intake` reads it before writing any spec, so what is
-written here decides what gets built without asking.
+One page. What this is and is not. Written in a planning round (skill `plan-product`), changed
+only in one. `intake` reads it before writing any spec, so what is written here decides what gets
+built without asking.
 
 ## Purpose
-A self-hosted personal finances dashboard: one place that shows what I can really spend, where my
-money goes, and how savings, investments and debt develop. It answers "can I spend this today?"
-honestly, because money that is reserved for taxes or for upcoming expenses is not counted as mine
-to spend. The repository is public: anyone can run their own copy; it contains code only, never
-anybody's data or setup.
+A self-hosted personal finances dashboard. It brings bank accounts, savings, investments and
+debts together in one place and shows what is really free to spend: money set aside for taxes or
+for upcoming expenses is not counted as spendable. Each installation holds one person's data and
+runs on that person's own machine; the repository contains code only.
 
-## Who uses it, and when
-One person, the owner of the installation. No other users.
-- **On the phone, any moment**: a glance at the overview. "What can I spend, private and business?"
-- **On a laptop, weekly or monthly**: the sit-down. Clear the review inbox, look at the month,
-  adjust reservations, budgets and fixed costs, update investments and debts.
+## Users and usage
+A single user per installation, on a private network.
+- **Phone, at a glance**: the overview with the headline numbers and what is still to come.
+- **Laptop, periodic review**: categorising, the monthly review, and maintaining reservations,
+  budgets, fixed costs, investments and debts.
 
-## What it does
-Overview
-- Shows two headline numbers, never added together: **Private free to spend** and
-  **Business available**, each with a tap-through that shows how it is built up.
-- Shows **fixed costs still to come this month** next to them, per scope, not subtracted.
-- Shows every figure with its age; a figure whose source failed or expired is marked stale.
+## Features
 
-Accounts and transactions
-- Link bank accounts through Enable Banking (read-only) and sync balances and transactions daily
-  and on demand.
-- Add accounts kept by hand (a balance I update) and import transactions from CSV.
-- Mark each account private or business, and as current, savings, investment or debt.
-- Recognise transfers between my own accounts; they are neither income nor spending.
-- Search and filter all transactions; add a note to a transaction.
-- Export everything to CSV. Back up everything to one file and restore from it.
+### Overview
+- Two headline numbers, shown side by side and never added together: **Private free to spend**
+  and **Business available**. Each opens a build-up that shows how it is calculated.
+- **Fixed costs still to come this month**, per scope, shown next to the headline numbers and not
+  subtracted from them.
+- Every figure carries its age. A figure whose source failed, expired or is too old is marked
+  stale.
 
-Business available
-- Read the after-tax available amount from an external source over a small fixed contract
-  ([docs/contracts/after-tax-source.md](../contracts/after-tax-source.md)). This amount replaces
-  the gross balance of the business accounts. The dashboard does no tax calculation of its own.
+### Accounts and transactions
+- Bank accounts linked through Enable Banking (read-only), with balances and transactions synced
+  daily and on demand.
+- Manual accounts with a balance that is updated by hand, and transactions imported from CSV.
+- Each account has a scope (private or business) and a kind (current, savings, investment, debt).
+- Transfers between own accounts are recognised and count as neither income nor spending.
+- Search and filter across all transactions; a free-text note per transaction.
+- Export of all data to CSV. Backup to a single file, and restore from it.
 
-Where it goes
-- Categorise transactions automatically with local rules; show which rule matched.
-- Correct a category and have the app offer to remember it as a rule for that counterparty.
-- Work through a review inbox of uncategorised transactions.
-- Split one transaction over several categories.
-- Mark part of a payment as advanced for someone else and track whether it came back.
+### After-tax business amount
+- The amount available after estimated taxes is read from an external bookkeeping source through
+  a small fixed contract ([docs/contracts/after-tax-source.md](../contracts/after-tax-source.md)).
+- This amount replaces the gross balance of the business accounts in *Business available*.
+- The dashboard performs no tax calculation. Without a configured source, the business number is
+  not shown.
 
-Planning
-- Create reservations for upcoming expenses (name, amount, due date, scope, optionally yearly);
-  see the amount to set aside per month; tick a reservation off against the real payment.
-- Get proposals for fixed costs from repeating transactions; confirm, edit or reject each; add one
-  by hand. See the monthly total per scope, and a warning when one changes price or is missing.
-- Set an optional monthly budget per category and see how far I am.
-- See a forecast to the end of the month and the next months from known income, fixed costs and
-  reservations.
-- Review a month and a year: income, spending per category against my average, savings rate,
-  biggest changes.
+### Categorisation
+- Transactions are categorised automatically by local rules on counterparty, description or IBAN.
+  Each transaction shows which rule matched.
+- Correcting a category offers to save the correction as a rule for that counterparty.
+- A review inbox lists the transactions that have no category yet.
+- A transaction can be split over several categories.
+- Part of a payment can be marked as advanced for someone else, with tracking of whether it was
+  paid back; the advanced part does not count as own spending.
 
-Wealth and debt
-- See savings, investments and debts as balances over time, and net worth.
-- Keep investments by hand as one value per account (updated by me or by CSV).
-- Give a debt an interest rate and a monthly payment; see interest per year, remaining balance and
-  payoff date.
-- Set savings goals (target amount and date) and see progress and the monthly amount needed.
-- See the runway: how many months my savings cover average spending, private and business apart.
+### Reservations and fixed costs
+- A reservation is a virtual pot for an upcoming expense: name, amount, due date, scope,
+  optionally repeating yearly. It shows the amount to set aside per month, reduces the headline
+  number of its scope, and is closed against the real payment. No money is moved.
+- Fixed costs are proposed from repeating transactions and count only after being confirmed; they
+  can be edited, rejected or added by hand. Totals are shown per month and per scope.
+- A fixed cost that changes price or does not arrive is flagged.
 
-Notifications
-- Be told when a bank consent is about to expire, a sync keeps failing, a fixed cost changes
-  price, a budget is passed or a balance runs low, through a channel I configure.
+### Budgets, review and forecast
+- An optional monthly budget per category, with progress during the month.
+- A monthly and a yearly review: income, spending per category compared with the average,
+  savings rate and the biggest changes.
+- A forecast of balances to the end of the month and the following months, from known income,
+  fixed costs and reservations.
+
+### Savings, investments and debt
+- Savings, investments and debts as balances over time, and net worth.
+- Investments are one value per account, updated by hand or by CSV.
+- A debt has an interest rate and a monthly payment, and shows interest per year, remaining
+  balance and payoff date.
+- Savings goals with a target amount and date, progress and the monthly amount needed.
+- Runway: the number of months savings cover average spending, per scope.
+
+### Notifications
+- Messages through a configurable channel for: a bank consent about to expire, a sync that keeps
+  failing, a fixed cost that changed price, a budget that was passed, a balance below a threshold.
 
 ## What must always hold
 1. **Read-only.** The app never moves money and never starts a payment.
@@ -76,7 +86,7 @@ Notifications
 3. **Amounts are integer cents with a currency**, never floating point.
 4. **No figure without its age.** A value whose source failed, expired or is older than its limit
    is shown as stale, never as if it were current.
-5. **What I entered by hand is never lost** by a sync, an import or an upgrade: corrections,
+5. **Manually entered data is never lost** by a sync, an import or an upgrade: corrections,
    rules, notes, splits, reservations, fixed costs, budgets, goals, debts, manual balances. Reading
    the same data twice imports nothing twice. Backup and restore are one file.
 6. **Secrets and real data live only in the data folder** of the installation: never in the
@@ -84,8 +94,8 @@ Notifications
 
 ## What it will not do
 - No payments or transfers.
-- No multiple users and no login system: the network (for the owner: Tailscale) is the gate. The
-  app binds to localhost only.
+- No multiple users and no login system: the app binds to localhost and relies on the private
+  network in front of it for access control.
 - No bookkeeping, invoices or tax calculation.
 - No live stock prices and no per-share positions.
 - No currency other than the euro, and no conversion. An account in another currency is refused.
@@ -101,14 +111,14 @@ Notifications
 - **Scope**: `private` or `business`. Every account, reservation and fixed cost has one.
 - **Kind**: `current`, `savings`, `investment` or `debt`.
 - **Source**: where an account's data comes from: `bank` (Enable Banking), `csv` or `manual`.
-- **Consent**: my time-limited approval at a bank for Enable Banking to read an account.
+- **Consent**: the time-limited approval given at a bank for Enable Banking to read an account.
 - **After-tax available**: the amount the external bookkeeping source reports as available after
   estimated taxes.
 - **Private free to spend**: balances of private current accounts minus open private reservations.
 - **Business available**: after-tax available minus open business reservations.
 - **Reservation**: a virtual pot for an upcoming expense. No money moves.
 - **Fixed cost**: a confirmed repeating expense with an amount and a rhythm.
-- **Transfer**: a pair of transactions between two of my own accounts.
+- **Transfer**: a pair of transactions between two own accounts.
 - **Rule**: a local match on counterparty, description or IBAN that sets a category.
 - **Review inbox**: the transactions without a category.
 - **Stale**: older than allowed, or from a source that last failed.

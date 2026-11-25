@@ -12,8 +12,9 @@ tool-specific file.
 A self-hosted personal finances dashboard for one person: bank balances and transactions
 (Enable Banking, CSV or by hand), what is really free to spend after taxes and reservations,
 categorised spending, fixed costs, budgets, savings, investments and debt. Java 25, Spring Boot,
-Thymeleaf, SQLite with Flyway, Maven; one jar run as a systemd service on a small home server
-(2 GB RAM, shared with other services), bound to localhost and published on a private network.
+Thymeleaf, SQLite with Flyway, Maven; one jar run as a systemd service on a small low-memory machine (a
+single-board computer is the reference target), bound to localhost and published on a private
+network.
 The repository is public and holds code only. What beats everything else: **the numbers shown
 are right and honestly dated, and nobody's real financial data or setup ever reaches this
 repository.**

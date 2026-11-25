@@ -8,14 +8,18 @@ risk:high:
   - changed-files:
       - any-glob-to-any-file:
           # Amounts and the headline numbers; bank sync, CSV import, backup; everything that
-          # talks to another host; the database schema; configuration; what installs and updates
-          # the app on someone's machine; the public contracts. Main code and its tests.
+          # talks to another host; what handles requests that change data (controllers, the
+          # same-origin filter, the import upload); where the data folder and the database are
+          # configured; the database schema; configuration; what installs and updates the app on
+          # someone's machine; the public contracts. Main code and its tests.
           - src/*/java/finances/money/**
           - src/*/java/finances/accounts/**
           - src/*/java/finances/sync/**
           - src/*/java/finances/importing/**
           - src/*/java/finances/backup/**
           - src/*/java/finances/outbound/**
+          - src/*/java/finances/web/**
+          - src/*/java/finances/data/**
           - src/main/resources/db/migration/**
           - src/main/resources/application*
           - src/main/resources/templates/**

@@ -7,4 +7,4 @@ Description=Update the personal finances dashboard to the latest release
 Type=oneshot
 EnvironmentFile=-%h/.config/finances-dashboard/env
 ExecStart=%h/finances-dashboard/update.sh
-TimeoutStartSec=15min
+TimeoutStartSec=30min

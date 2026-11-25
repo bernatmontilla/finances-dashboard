@@ -39,10 +39,24 @@ service, and 8080 is an example port. Nothing here is specific to any installati
    ```
 
    The service unit caps the heap at 300 MB (`-Xmx300m`) and the whole process at 500 MB
-   (`MemoryMax`); change both together if your machine has more or less to spare. The port is
-   `SERVER_PORT` (default 8080). To change it, or anything else the unit sets, write it into
-   `~/.config/finances-dashboard/env`, one `NAME=value` per line; both the service and the update
-   read that file.
+   (`MemoryMax`); change both together if your machine has more or less to spare. Two things to
+   check on your machine, because they depend on how its systemd is set up: `MemoryMax` in a user
+   unit only works when the memory controller is delegated to the user manager (on some systems
+   this needs a `user@.service` drop-in with `Delegate=memory`; `systemctl --user show
+   finances-dashboard.service -p MemoryMax` and `systemd-cgtop` tell), and `PrivateTmp=yes` fails
+   with status 226/NAMESPACE where unprivileged user namespaces are disabled (delete that line then).
+
+   The settings go into `~/.config/finances-dashboard/env`, one `NAME=value` per line; both the
+   service and the update read that file. Two are needed or useful:
+
+   ```
+   FINANCES_REPO=<owner>/<name>
+   SERVER_PORT=8080
+   ```
+
+   `FINANCES_REPO` is the GitHub repository whose releases to install (the part after
+   `github.com/` in its address); the update refuses to run without it. `SERVER_PORT` is the port
+   of the app (default 8080) and also the one the update asks `/health` on.
 
 3. **Install the first jar and start.** The update script does a first installation too: it
    downloads the latest release, checks its checksum, installs it, starts the service and waits for
@@ -50,8 +64,12 @@ service, and 8080 is an example port. Nothing here is specific to any installati
 
    ```bash
    systemctl --user enable finances-dashboard.service
-   ~/finances-dashboard/update.sh
+   systemctl --user start finances-dashboard-update.service   # waits until it is done
+   journalctl --user -u finances-dashboard-update.service -e
    ```
+
+   (The update runs as a service of its own so that it reads the env file. Run by hand, put the
+   settings in the environment: `set -a; . ~/.config/finances-dashboard/env; set +a`.)
 
 4. **Look.** `curl http://127.0.0.1:8080/health` answers `{"status":"ok","version":"…"}`. The
    overview page is at the same address.
@@ -83,19 +101,27 @@ other way of publishing on the open internet.
 newer than the installed version it downloads `finances-dashboard.jar` and
 `finances-dashboard.jar.sha256` to a temporary place inside `~/finances-dashboard/app`, verifies
 the checksum, keeps the current jar as `previous.jar`, swaps, restarts the service and polls
-`/health` (up to two minutes) until it reports the new version. If it does not, the previous jar is
-put back and the service restarted; the run is then reported as failed.
+`/health` (up to five minutes, because the first start after a release may run database
+migrations) until it reports the new version. Only then is the new version recorded as installed.
+If it does not report in time, the previous jar is put back and the service restarted; the run is
+reported as failed, and that release is not tried again until a newer one appears. If a run is cut
+off between the swap and the check (power cut, reboot), the next run settles it the same way.
 
 Nothing changes, and the run ends quietly, when there is no network, GitHub is unreachable or
-rate-limited (the timer tries again next day), when the checksum does not match or the download is
-partial, and when the installed version is already the latest. Two runs at once are safe: the
-second leaves at once. The data folder is never touched.
+rate-limited (the timer tries again next day), when the download is partial, and when the
+installed version is already the latest. A checksum that does not match is refused and reported as
+failed, with nothing swapped. Two runs at once are safe: the second leaves at once. The data folder
+is never touched.
+
+An automatic rollback puts the old jar back; it does not undo database migrations the new version
+already ran. Make a backup before a release you are unsure of.
 
 ## Updating by hand
 
 ```bash
-~/finances-dashboard/update.sh          # the same as the timer does
-systemctl --user start finances-dashboard-update.service   # or through systemd, so it is logged
+systemctl --user start finances-dashboard-update.service   # what the timer does; read the result with journalctl
+# or directly, with the settings of the env file in the environment:
+(set -a; . ~/.config/finances-dashboard/env; set +a; ~/finances-dashboard/update.sh)
 ```
 
 ## Rolling back
@@ -110,8 +136,8 @@ cp ~/finances-dashboard/app/previous-version ~/finances-dashboard/app/installed-
 systemctl --user restart finances-dashboard.service
 ```
 
-Leave the timer off until a newer release exists, or the next run installs the same version again.
-A database migration is never undone: if the new version changed the data, restore a backup made
+Leave the timer off until a newer release exists, or the next run installs the same version again
+(an automatic rollback remembers the failed release; a manual one does not). A database migration is never undone: if the new version changed the data, restore a backup made
 before the update as well.
 
 ## Where the logs are

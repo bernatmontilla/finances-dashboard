@@ -60,11 +60,13 @@ run_update() { # extra environment can be put in front by the caller via env
   FAKE_ROOT="$root" \
   FINANCES_APP_DIR="$root/app" \
   FINANCES_SYSTEMCTL="$root/systemctl" \
+  FINANCES_REPO=owner/name \
   FINANCES_RELEASE_API="file://$root/latest.json" \
   FINANCES_DOWNLOAD_BASE="file://$root/releases" \
   FINANCES_HEALTH_URL="file://$root/health.json" \
   FINANCES_HEALTH_TIMEOUT=2 FINANCES_HEALTH_INTERVAL=1 \
   FINANCES_UID=1000 \
+  FINANCES_CURL_PROTO==file \
   "$@" bash "$UPDATE" >"$root/out.log" 2>&1
 }
 
@@ -104,6 +106,14 @@ check "checksum: no restart" test "$(restarts)" = 0
 check "checksum: no previous jar made" test ! -e "$root/app/previous.jar"
 check "checksum: no temporary files left" no_leftovers
 
+# 4b. A checksum file that names another file, or is empty, does not vouch for the download.
+new_installation 1.1.0; publish v1.2.0 1.2.0
+(cd "$root/releases/v1.2.0" && printf '%s  ../finances-dashboard.jar\n' "$(sha256sum < /dev/null | cut -d' ' -f1)" > finances-dashboard.jar.sha256)
+if run_update env; then fail "checksum of another file: update.sh must exit non-zero"; fi
+: > "$root/releases/v1.2.0/finances-dashboard.jar.sha256"
+if run_update env; then fail "empty checksum file: update.sh must exit non-zero"; fi
+check "checksum of another file: nothing swapped" test "$(jar_version)" = 1.1.0 -a "$(restarts)" = 0
+
 # 5. A partial download (the checksum file is missing): nothing is swapped.
 new_installation 1.1.0; publish v1.2.0 1.2.0; rm "$root/releases/v1.2.0/finances-dashboard.jar.sha256"
 run_update env || fail "partial: update.sh failed: $(cat "$root/out.log")"
@@ -118,6 +128,15 @@ check "rollback: restarted for the new jar and again for the old one" test "$(re
 check "rollback: the old version reports healthy" grep -q '"version":"1.1.0"' "$root/health.json"
 check "rollback: the data folder is untouched" data_untouched
 check "rollback: no temporary files left" no_leftovers
+check "rollback: nothing is left pending" test ! -e "$root/app/pending-version"
+# The same broken release is not tried again every day, but a newer one is.
+: > "$root/systemctl.log"
+run_update env || fail "rollback: a second run must leave the failed release alone"
+check "rollback: the failed release is skipped" test "$(restarts)" = 0 -a "$(jar_version)" = 1.1.0
+publish v1.3.0 1.3.0
+run_update env || fail "rollback: a newer release must install: $(cat "$root/out.log")"
+check "rollback: a newer release is installed" test "$(jar_version)" = 1.3.0 -a "$(cat "$root/app/installed-version")" = 1.3.0
+check "rollback: the failure mark is cleared" test ! -e "$root/app/failed-version"
 
 # 7. No network or GitHub unreachable or rate-limited: exit 0, nothing changed.
 new_installation 1.1.0; publish v1.2.0 1.2.0; rm "$root/latest.json"
@@ -140,6 +159,27 @@ check "first install: no previous jar" test ! -e "$root/app/previous.jar"
 new_installation 1.1.0; publish v1.2.0 1.2.0
 ( exec 9>"$root/app/.update.lock"; flock -n 9; run_update env ) || fail "lock: update.sh must exit 0 while another run holds the lock"
 check "lock: nothing changed" test "$(jar_version)" = 1.1.0 -a "$(restarts)" = 0
+
+# 10b. A run cut off between the swap and the health check leaves a marker, which the next run settles.
+new_installation 1.1.0
+printf '1.2.0\n' > "$root/app/finances-dashboard.jar"; printf '1.1.0\n' > "$root/app/previous.jar"
+printf '1.2.0\n' > "$root/app/pending-version"; printf '1.1.0\n' > "$root/app/previous-version"
+publish v1.2.0 1.2.0; printf '{"status":"ok","version":"1.2.0"}' > "$root/health.json"
+run_update env || fail "pending healthy: update.sh failed: $(cat "$root/out.log")"
+check "pending healthy: recorded as installed" test "$(cat "$root/app/installed-version")" = 1.2.0 -a ! -e "$root/app/pending-version"
+check "pending healthy: no restart" test "$(restarts)" = 0
+new_installation 1.1.0
+printf '1.2.0 bad\n' > "$root/app/finances-dashboard.jar"; printf '1.1.0\n' > "$root/app/previous.jar"
+printf '1.2.0\n' > "$root/app/pending-version"; printf '1.1.0\n' > "$root/app/previous-version"
+publish v1.2.0 "1.2.0 bad"; rm -f "$root/health.json"
+if run_update env; then fail "pending unhealthy: update.sh must exit non-zero"; fi
+check "pending unhealthy: the previous jar is back" test "$(jar_version)" = 1.1.0 -a "$(cat "$root/app/installed-version")" = 1.1.0
+check "pending unhealthy: marker cleared and release remembered as failed" test ! -e "$root/app/pending-version" -a "$(cat "$root/app/failed-version")" = 1.2.0
+
+# 10c. FINANCES_REPO is required: no owner name is built into the script.
+new_installation 1.1.0; publish v1.2.0 1.2.0
+if run_update env FINANCES_REPO= FINANCES_RELEASE_API=; then fail "no repository: update.sh must refuse"; fi
+check "no repository: nothing changed" test "$(jar_version)" = 1.1.0 -a "$(restarts)" = 0
 
 # 11. Never as root.
 new_installation 1.1.0; publish v1.2.0 1.2.0

@@ -56,7 +56,7 @@ Acceptance:
 - [ ] A fixed cost whose charge changed price or did not arrive is flagged.
 - [ ] Reservations and fixed costs survive a backup and restore.
 
-Plan issue: to be filed (without the `plan` label until M1 is accepted)
+Plan issue: #23 (without the `plan` label until M1 is accepted)
 
 ## Later
 - M3 Categorisation: categories, rules, review inbox, transfers, splits, search, notes, CSV export.

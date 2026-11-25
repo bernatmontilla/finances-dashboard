@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title th:text="#{app.name}"></title>
+  <link rel="stylesheet" th:href="@{/app.css}">
+</head>
+<body>
+  <main>
+    <h1 th:text="#{app.name}"></h1>
+    <p class="muted" th:text="#{overview.version(${version})}"></p>
+    <h2 th:text="#{overview.title}"></h2>
+    <p th:text="#{overview.noAccounts}"></p>
+  </main>
+</body>
+</html>

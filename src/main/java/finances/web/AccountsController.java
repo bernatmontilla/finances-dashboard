@@ -10,6 +10,7 @@ import finances.accounts.Source;
 import finances.accounts.TransactionService;
 import finances.money.AmountFormatException;
 import finances.sync.BankStatus;
+import finances.sync.FreshnessService;
 import finances.money.Money;
 import jakarta.servlet.http.HttpServletResponse;
 import java.time.Instant;
@@ -42,11 +43,13 @@ class AccountsController {
     private final AccountService accounts;
     private final TransactionService transactions;
     private final BankStatus bank;
+    private final FreshnessService freshness;
 
-    AccountsController(AccountService accounts, TransactionService transactions, BankStatus bank) {
+    AccountsController(AccountService accounts, TransactionService transactions, BankStatus bank, FreshnessService freshness) {
         this.accounts = accounts;
         this.transactions = transactions;
         this.bank = bank;
+        this.freshness = freshness;
     }
 
     // ----- the list
@@ -56,7 +59,8 @@ class AccountsController {
         LocalDate today = accounts.today();
         Map<Long, Instant> delivered = transactions.lastDelivered();
         var banks = accounts.latestBankBalances();
-        model.addAttribute("groups", AccountViews.groups(accounts.list(false), today, delivered, transactions.zone(), banks));
+        var active = accounts.list(false);
+        model.addAttribute("groups", AccountViews.groups(active, today, delivered, transactions.zone(), banks, freshness.stale(active)));
         model.addAttribute("archivedGroups", AccountViews.groups(accounts.list(true), today, delivered, transactions.zone(), banks));
         return "accounts";
     }
@@ -198,9 +202,13 @@ class AccountsController {
         // Balances are typed in for an account that no bank feeds: a manual one or a CSV one.
         model.addAttribute("manual", account.source() != Source.BANK);
         model.addAttribute("csv", account.source() == Source.CSV);
-        model.addAttribute("history", accounts.history(account.id()).stream()
+        var entries = accounts.history(account.id());
+        model.addAttribute("history", entries.stream()
                 .map(e -> new AccountViews.EntryRow(e.id(), AccountViews.balance(e, today)))
                 .toList());
+        // The newest balance is the current figure; the older ones are history and are never marked.
+        model.addAttribute("stale", account.archived() ? null
+                : AccountViews.stale(freshness.standing(account, entries.isEmpty() ? null : entries.getFirst()).orElse(null)));
         model.addAttribute("bank", account.source() != Source.BANK ? null : bank.consentOfAccount(account.id())
                 .map(consent -> BankViews.account(consent, accounts.latestBankBalance(account.id()).orElse(null),
                         bank.lastRun(account.id()).orElse(null), transactions.zone()))

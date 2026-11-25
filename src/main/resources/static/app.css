@@ -95,3 +95,15 @@ label.check input { width: auto; }
 .bank-row > * { margin-right: 0.5rem; }
 .bank-row > form.inline { display: inline-block; margin-top: 0.25rem; }
 .nowrap { white-space: nowrap; }
+
+/* A stale figure: a word and a sign (never colour alone); the reason opens on tap, with the keyboard or on hover. */
+details.stale { display: inline-block; vertical-align: top; max-width: 100%; }
+details.stale summary { display: inline-block; cursor: pointer; color: var(--danger); border: 1px solid var(--danger); border-radius: 0.25rem; padding: 0 0.375rem; font-weight: 600; }
+details.stale[open] > span { display: block; margin-top: 0.25rem; }
+
+/* The accounts that need attention, as a comma separated run of links on the line at the top of the overview. */
+ul.attention { display: inline; list-style: none; margin: 0; padding: 0; }
+ul.attention li { display: inline; }
+ul.attention { font-weight: 400; }
+ul.attention li:not(:last-child)::after { content: ","; }
+.notice > p:first-child { margin-top: 0; }

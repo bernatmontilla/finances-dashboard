@@ -66,6 +66,10 @@ mention the test here.
 - A migration changes "database version" in two existing tests (`SettingsBackupPagesTest`, `BackupServiceTest`);
   update the number there when you add one.
 
+- Staleness (#11): the rules are `finances.money.Freshness`, the facts come from `finances.sync.FreshnessService`; never decide "stale" in a
+  template or a view. A new place that shows a balance shows its age and the `stale` fragment. The overview's line at the top counts the
+  accounts of `accounts.list(false)` only (archived ones are not marked). A test that depends on "now" builds its data from the clock.
+
 ## The target machine
 
 - Low memory, possibly shared with other services: the heap cap is real. Stream large result sets.

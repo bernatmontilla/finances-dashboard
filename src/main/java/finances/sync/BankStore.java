@@ -184,6 +184,15 @@ class BankStore {
                 .optional();
     }
 
+    /** When the newest successful run of the account started, or empty when none ever ended well. */
+    Optional<Instant> lastOkStartOf(long accountId) {
+        return jdbc.sql("select started_at from sync_run where account_id = ? and outcome = 'ok' order by started_at desc, id desc limit 1")
+                .param(accountId)
+                .query(String.class)
+                .optional()
+                .map(Instant::parse);
+    }
+
     // ----- rows
 
     private static Consent consent(ResultSet rs, int row) throws SQLException {

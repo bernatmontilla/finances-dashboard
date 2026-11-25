@@ -12,6 +12,18 @@
     <nav th:replace="~{fragments :: nav}"></nav>
     <h1 th:text="#{app.name}"></h1>
     <p class="muted" th:text="#{overview.version(${version})}"></p>
+    <div th:if="${!attention.empty}" class="notice warning" id="attention">
+      <span th:text="#{overview.stale(${attention.size()})}"></span>
+      <ul class="attention">
+        <li th:each="row : ${attention}"><a th:href="@{/accounts/{id}(id=${row.id})}" th:text="${row.name}"></a></li>
+      </ul>
+    </div>
+    <div th:each="expiring : ${expiring}" class="notice">
+      <p th:text="#{overview.consentEnds(${expiring.bankName}, ${expiring.endsOn}, ${expiring.daysLeft})}"></p>
+      <form method="post" th:action="@{/settings/bank/consents/{id}/renew(id=${expiring.consentId})}">
+        <p class="actions"><button type="submit" th:text="#{bank.renew}"></button></p>
+      </form>
+    </div>
     <h2 th:text="#{overview.title}"></h2>
     <p th:if="${syncKey != null}" class="notice" role="status" th:text="#{${syncKey}(${syncOk}, ${syncFailed})}"></p>
     <form th:if="${canSync}" method="post" th:action="@{/sync}">
@@ -31,6 +43,7 @@
           <a th:href="@{/accounts/{id}(id=${row.id})}" th:text="${row.name}"></a>
           <span class="muted" th:text="#{${row.kindKey}}"></span>
           <span th:replace="~{fragments :: balance(${row.balance}, ${row.debt})}"></span>
+          <th:block th:replace="~{fragments :: stale(${row.stale})}"></th:block>
         </li>
       </ul>
     </section>

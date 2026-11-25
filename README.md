@@ -27,6 +27,13 @@ a private network is the installer's job.
 | `finances.data-dir` (or the environment variable `FINANCES_DATA_DIR`) | **Required.** The folder that holds the database. Starting without it, or twice on the same folder, fails with a clear message. |
 | `server.port` (or `SERVER_PORT`) | The port, default `8080`. |
 | `finances.import.max-file-size` (or `FINANCES_IMPORT_MAX_FILE_SIZE`) | The largest CSV file that can be uploaded, default `10MB`. |
+| `finances.freshness.bank-sync-hours` | A bank account is marked stale when its last successful sync is older than this many hours, default `36`. |
+| `finances.freshness.current-days` | A manual or CSV *current* account is marked stale when its newest balance is older than this many days, default `14`. |
+| `finances.freshness.savings-days` | The same for a *savings* account, default `45`. |
+| `finances.freshness.investment-days` | The same for an *investment* account, default `100`. |
+| `finances.freshness.debt-days` | The same for a *debt*, default `100`. |
+
+Every limit is a whole number of 1 or more; a smaller one stops the application at start with a message.
 
 Open *Accounts* to add an account (a name, a scope `private` or `business`, a kind `current`,
 `savings`, `investment` or `debt`, and an optional IBAN) and to type in its balance with the date it
@@ -40,6 +47,13 @@ separator, which column is which), all of which can be corrected. The mapping is
 the next upload. Importing the same file twice adds nothing; rows that cannot be read are listed and the
 others are imported. The file is held in memory for the preview only and is not kept. A *balance after*
 column updates the balance from the newest row.
+
+Every balance is shown with its age in words ("today 07:10", "yesterday", "12 days ago"), and a
+balance that may be out of date carries a *Stale* mark; tap it (or hover it) for the reason: *sync
+failed*, *consent expired*, *no successful sync for 2 days* or *not updated for 20 days*. A bank account
+is judged by its sync, a manual or CSV account by the date of its newest balance, with the limits above.
+The overview says so in one line at the top, and announces a bank consent that ends within 14 days with a
+*Renew* button before it makes anything stale. Archived accounts are not counted.
 
 `GET /health` answers `200` with `{"status":"ok","version":"…"}` when the database is reachable, and `503` with `{"status":"unavailable","version":"…"}` otherwise.
 

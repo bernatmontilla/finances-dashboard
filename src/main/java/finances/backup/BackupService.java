@@ -448,7 +448,7 @@ public final class BackupService {
         } catch (Exception e) {
             if (!oldDatabasePutBack[0]) {
                 throw new BackupException(Reason.OLD_DATABASE_ASIDE, "The restore failed and the old database could not be put back. "
-                        + "It is kept as " + replaced.getFileName() + " in the data folder; see docs/install.md.", e);
+                        + "It is kept as " + replaced.getFileName() + " in the data folder: stop the service and see docs/install.md.", e);
             }
             if (e instanceof IOException || e instanceof SQLException) {
                 throw new BackupException(Reason.FAILED, "The database could not be replaced (is the disk full?). The old database is still in use.", e);
@@ -459,37 +459,62 @@ public final class BackupService {
     }
 
     /**
-     * Undoes a swap that failed. What matters is that the old database is in use again, so that step never
-     * depends on another one: each clean-up step has its own {@code try}, a failure of one is added to
-     * {@code failure} (the error that is rethrown and shown) and the next step still runs.
+     * Undoes a swap that failed, so that the old database is in use again. Each clean-up step has its own
+     * {@code try}: a failure of one is added to {@code failure} (the error that is rethrown and shown) and the
+     * next step still runs, so a failing clean-up never keeps the old database from being put back. Two things
+     * the owner's data is never put at risk for:
+     * <ul>
+     * <li>An undo's source is {@code finances.previous.db}, the only copy of that data. The half-migrated file is
+     * renamed back to it first, and when that fails the old database is not put back over it.
+     * <li>The old database is never put next to journal files of another database: when they cannot be deleted
+     * it is not put back, because SQLite would replay them into it.
+     * </ul>
+     * In both cases the old database stays as {@code finances.replaced.db}, nothing is deleted, and the
+     * result is {@code false}.
      *
      * @return whether the old database is in use again (always true when there was none to put back)
      */
     private boolean rollBack(Exception failure, Path source, Path database, Path replaced, boolean movedIn, boolean hadDatabase) {
-        if (movedIn) {
-            // The half-migrated file goes back where it came from (an undo's source is the only copy of that data).
+        boolean sourceIsOnlyCopy = source.equals(previous());
+        boolean movedAway = false;
+        if (movedIn && (sourceIsOnlyCopy || !hadDatabase)) {
             try {
                 disk.move(database, source, StandardCopyOption.REPLACE_EXISTING);
+                movedAway = true;
             } catch (IOException | RuntimeException e) {
                 failure.addSuppressed(e);
             }
         }
+        if (sourceIsOnlyCopy && movedIn && !movedAway) {
+            return false; // the half-migrated file stays in use, with its own journal files
+        }
+        boolean clean = true;
         try {
             deleteSidecars(database);
         } catch (IOException | RuntimeException e) {
             failure.addSuppressed(e);
+            clean = false;
         }
         if (!hadDatabase) {
             return true;
         }
-        try {
-            // Also replaces the half-migrated file when it could not be moved away above.
-            disk.move(replaced, database, StandardCopyOption.REPLACE_EXISTING);
-            return true;
-        } catch (IOException | RuntimeException e) {
-            failure.addSuppressed(e);
-            return false;
+        if (clean) {
+            try {
+                // A restore's half-migrated file, when still there, is replaced: its source is only a staged copy.
+                disk.move(replaced, database, StandardCopyOption.REPLACE_EXISTING);
+                return true;
+            } catch (IOException | RuntimeException e) {
+                failure.addSuppressed(e);
+            }
         }
+        if (movedAway) {
+            try {
+                disk.move(source, database); // a database file must exist: the application creates an empty one otherwise
+            } catch (IOException | RuntimeException e) {
+                failure.addSuppressed(e);
+            }
+        }
+        return false;
     }
 
     /** Writes a file's data to the disk before it is renamed into place, so a power cut cannot leave an empty database. */

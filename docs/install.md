@@ -218,12 +218,20 @@ files there; the application never deletes your backups.
 A restore briefly needs room for the uploaded file about three times over in `tmp/` (the upload, its copy and the checked database), so leave free space of a few times the backup size on the disk of the data folder; the command line restore needs one copy less.
 
 If the disk is full, a backup fails without leaving a partial file and the database in use is
-untouched; so is a restore. If a restore is cut off by a power failure at the very moment of the swap, the next start puts the
+untouched; so is a restore. A restore is refused before it starts when the data folder has less free
+space than the backup's database plus the larger of 16 MiB and the database's own size again (the
+size is what the file states about itself, so it is checked against the disk first). If a restore is cut off by a power failure at the very moment of the swap, the next start puts the
 database from before back (`finances.replaced.db` becomes `finances.db` when there is no
 `finances.db`). If a file `finances.replaced.db` is still there next to a working database, an
 earlier restore could not finish tidying up: the file may hold data that exists nowhere else, so a
 restore or undo is refused until you have looked at it. Keep it somewhere safe or delete it, with the
 service stopped.
+
+If a restore fails and the message says the old database could not be put back (a failing disk
+while undoing the restore), the old database is kept as `finances.replaced.db`, and nothing was
+deleted. Do not delete that file. Stop the service, then check that it holds your data (open a copy of
+it), move it over `finances.db` (`mv finances.replaced.db finances.db`, and delete the `finances.db-wal`
+and `finances.db-shm` files next to it first), and start the service.
 
 ## Where the logs are
 

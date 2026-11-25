@@ -1,0 +1,5 @@
+{
+  "message": "ASPSP Rate limit exceeded",
+  "code": 429,
+  "error": "ASPSP_RATE_LIMIT_EXCEEDED"
+}

@@ -1,0 +1,56 @@
+{
+  "aspsps": [
+    {
+      "name": "Example Bank",
+      "country": "NL",
+      "logo": "https://example.com/brands/NL/Example-Bank/",
+      "psu_types": [
+        "personal",
+        "business"
+      ],
+      "auth_methods": [
+        {
+          "name": "app",
+          "title": "Example Bank app",
+          "psu_type": "personal",
+          "approach": "REDIRECT",
+          "hidden_method": false
+        },
+        {
+          "name": "app-business",
+          "title": "Example Bank business",
+          "psu_type": "business",
+          "approach": "REDIRECT",
+          "hidden_method": false
+        }
+      ],
+      "maximum_consent_validity": 15552000,
+      "beta": false,
+      "bic": "XMPLNL2A",
+      "required_psu_headers": [
+        "Psu-Ip-Address",
+        "Psu-User-Agent"
+      ]
+    },
+    {
+      "name": "Sample Savings Bank",
+      "country": "NL",
+      "logo": "https://example.com/brands/NL/Sample-Savings-Bank/",
+      "psu_types": [
+        "personal"
+      ],
+      "auth_methods": [
+        {
+          "name": "app",
+          "title": "Sample Savings app",
+          "psu_type": "personal",
+          "approach": "REDIRECT",
+          "hidden_method": false
+        }
+      ],
+      "maximum_consent_validity": 7776000,
+      "beta": true,
+      "bic": "SMPLNL2A"
+    }
+  ]
+}

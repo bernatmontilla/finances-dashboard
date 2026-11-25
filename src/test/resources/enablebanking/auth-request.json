@@ -1,0 +1,15 @@
+{
+  "access": {
+    "valid_until": "2027-05-24T10:00:00.000000+00:00",
+    "balances": true,
+    "transactions": true
+  },
+  "aspsp": {
+    "name": "Example Bank",
+    "country": "NL"
+  },
+  "state": "5d1f2c3a-0000-4000-8000-00000000a001",
+  "redirect_url": "http://example.com:8080/bank/callback",
+  "psu_type": "personal",
+  "language": "en"
+}

@@ -1,0 +1,5 @@
+{
+  "message": "Redirect URI not allowed",
+  "code": 422,
+  "error": "REDIRECT_URI_NOT_ALLOWED"
+}

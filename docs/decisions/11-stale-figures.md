@@ -20,8 +20,7 @@ migration, the facts come from what the bank sync already keeps.
 - **"Older than"**: a limit exactly reached is still fresh; one second (bank) or one day (by hand) more is stale. Tested on both sides.
 - **A bank account is judged by its sync, not by its balance's own timestamp.** The moment *shown* is the bank's own timestamp ("today
   07:10") when the bank gave one; a date-only or "fetched" balance keeps the notes of #10. The stale test uses the last successful run
-  (`sync_run`, outcome ok), falling back to `bank_account.last_success_at` and then to when the balance was stored; "last sync failed" is
-  the newest run of the account.
+  (`sync_run`, outcome ok), falling back to `bank_account.last_success_at`; "last sync failed" is the newest run of the account.
 - **A consent has ended** when its status says so, its date has passed (found without waiting for the next sync, so a machine with sync
   switched off still shows it), or its session file is not in the data folder (a restore on another machine: `10-bank-sync.md`). The
   session file is only checked for existing, never read.
@@ -44,6 +43,8 @@ migration, the facts come from what the bank sync already keeps.
 
 ## Not done / known limits
 
-- A bank balance the bank itself dated long ago while the sync is fine is not marked stale (the spec judges a bank account by its sync).
+- A bank account whose sync is fine is still marked *not updated for N days* when its newest balance is older than the limit of its kind
+  (found in review: a bank that stops giving a balance, or an account typed by hand and then linked, would otherwise look fresh). A
+  dormant account whose bank dates the balance long ago is marked too; that is the honest side to err on (hard rule 9).
 - The overview still shows no totals or headline numbers (not in this issue).
 - The after-tax source follows the same pattern in M2.

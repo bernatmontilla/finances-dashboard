@@ -197,7 +197,8 @@ class StalePagesTest {
         String old = row(get("/"), "Old Manual Account");
 
         // A word and a sign inside a control that opens on tap or from the keyboard, with no script involved.
-        assertThat(old).contains("<details class=\"stale\"").contains("<summary>\u26A0 Stale</summary>");
+        assertThat(old).contains("<details class=\"stale\"").contains("<summary>\u26A0 Stale</summary>")
+                .contains("title=\"not updated for 20 days\"");
     }
 
     @Test
@@ -206,7 +207,7 @@ class StalePagesTest {
 
         String page = get("/");
 
-        Matcher line = Pattern.compile("<p [^>]*id=\"attention\".*?</p>", Pattern.DOTALL).matcher(page);
+        Matcher line = Pattern.compile("<div [^>]*id=\"attention\".*?</div>", Pattern.DOTALL).matcher(page);
         assertThat(line.find()).isTrue();
         assertThat(line.group()).contains("3 accounts have a figure that may be out of date")
                 .contains(">Failed Bank Account</a>").contains(">Expired Bank Account</a>").contains(">Old Manual Account</a>")
@@ -292,6 +293,14 @@ class StalePagesTest {
         accounts.addBalance(id, Money.eur(300), LocalDate.now(clock).minusDays(2));
 
         assertThat(get("/accounts/" + id)).doesNotContain("Stale");
+    }
+
+    @Test
+    void theAccountPageOfABankAccountWithoutAnyBalanceStillShowsTheMark() throws Exception {
+        long bankB = consent("Sample Savings Bank", "expired", 90);
+        long id = bankAccount("Brand New Bank Account", bankB, 4);
+
+        assertThat(get("/accounts/" + id)).contains("Stale").contains("consent expired");
     }
 
     @Test

@@ -57,6 +57,7 @@
     </th:block>
 
     <h2 th:text="#{balances.title}"></h2>
+    <p th:if="${stale != null}"><th:block th:replace="~{fragments :: stale(${stale})}"></th:block></p>
     <p th:replace="~{fragments :: error}"></p>
     <th:block th:if="${manual and !account.archived}">
       <form method="post" th:action="@{/accounts/{id}/balances(id=${account.id})}">
@@ -77,9 +78,8 @@
 
     <p th:if="${history.empty}" th:text="#{balances.none}"></p>
     <ul class="list" th:unless="${history.empty}">
-      <li th:each="entry, it : ${history}">
+      <li th:each="entry : ${history}">
         <span th:replace="~{fragments :: balance(${entry.balance}, ${debt})}"></span>
-        <th:block th:if="${it.first}" th:replace="~{fragments :: stale(${stale})}"></th:block>
         <a th:if="${manual and !account.archived}" th:href="@{/accounts/{id}/balances/{entry}/edit(id=${account.id}, entry=${entry.id})}" th:text="#{balances.edit}"></a>
       </li>
     </ul>

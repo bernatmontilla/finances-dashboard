@@ -26,7 +26,8 @@
   </span>
 
   <!-- A stale figure is marked by a word and a sign, never by colour alone; the reason opens on tap or hover. -->
-  <details th:fragment="stale(view)" th:if="${view != null}" class="stale">
+  <details th:fragment="stale(view)" th:if="${view != null}" class="stale"
+           th:title="${view.hasDetail()} ? #{${view.key}(#{${view.detailKey}})} : #{${view.key}(${view.arg})}">
     <summary th:text="#{stale.mark}"></summary>
     <span th:if="${!view.hasDetail()}" th:text="#{${view.key}(${view.arg})}"></span>
     <span th:if="${view.hasDetail()}" th:text="#{${view.key}(#{${view.detailKey}})}"></span>

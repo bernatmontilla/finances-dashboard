@@ -24,9 +24,9 @@ import org.springframework.stereotype.Service;
  * consent, the recorded runs of the account, the balance and its date) and keeps nothing of its own. Read only;
  * nothing here logs.
  *
- * <p>A bank account is judged by its sync, not by the date of its balance: stale when the consent has ended, when
- * the newest run failed, or when the last successful run is older than the limit. A manual or CSV account is
- * judged by the date of its newest balance against the limit of its kind.
+ * <p>A bank account is judged by its sync: stale when the consent has ended, when the newest run failed, or when the
+ * last successful run is older than the limit; and, when the sync is fine, when its newest balance is older than the
+ * limit of its kind. A manual or CSV account is judged by the date of its newest balance against that limit.
  */
 @Service
 public class FreshnessService {
@@ -84,12 +84,17 @@ public class FreshnessService {
         String failure = lastRun.isPresent() && !lastRun.get().ok()
                 ? (lastRun.get().reason() == null ? "unexpected" : lastRun.get().reason())
                 : null;
-        // The recorded runs say when the last sync ended well; the link's own stamp and the moment the balance was
-        // stored are only fallbacks for a database that has no run for it.
-        Instant lastSuccess = bank.lastSuccessfulSync(account.id())
-                .or(() -> Optional.ofNullable(link.lastSuccessAt()))
-                .orElse(latest == null ? null : latest.enteredAt());
-        return Freshness.bank(now, lastSuccess, failure, ended, limits.bankSync());
+        // The recorded runs say when the last sync ended well; the link's own stamp is only a fallback for a database
+        // that has no run for it.
+        Instant lastSuccess = bank.lastSuccessfulSync(account.id()).or(() -> Optional.ofNullable(link.lastSuccessAt())).orElse(null);
+        Optional<Freshness.Stale> bySync = Freshness.bank(now, lastSuccess, failure, ended, limits.bankSync());
+        if (bySync.isPresent() || latest == null) {
+            return bySync;
+        }
+        // A sync that went well says nothing about a balance it did not bring (the bank gave none, or never gave one for this
+        // account, or the account was typed by hand before it was linked): a balance older than the limit of its kind is
+        // stale all the same, so an old figure is never shown as fresh.
+        return Freshness.byHand(latest.date(), LocalDate.now(clock), daysFor(account));
     }
 
     /** Ended, past its date, or without its session file (a restore on another machine): found without a call to the bank. */

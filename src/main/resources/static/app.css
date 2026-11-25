@@ -104,4 +104,6 @@ details.stale[open] > span { display: block; margin-top: 0.25rem; }
 /* The accounts that need attention, as a comma separated run of links on the line at the top of the overview. */
 ul.attention { display: inline; list-style: none; margin: 0; padding: 0; }
 ul.attention li { display: inline; }
-ul.attention li + li::before { content: ", "; }
+ul.attention { font-weight: 400; }
+ul.attention li:not(:last-child)::after { content: ","; }
+.notice > p:first-child { margin-top: 0; }

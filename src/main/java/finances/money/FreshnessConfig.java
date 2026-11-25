@@ -6,7 +6,7 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * The limits of {@link Freshness} from configuration. The property names are a public interface
- * (AGENTS.md, hard rule 4) and are listed with their defaults in {@code docs/install.md}.
+ * (AGENTS.md, hard rule 4) and are listed with their defaults in {@code README.md}.
  */
 @Configuration(proxyBeanMethods = false)
 public class FreshnessConfig {

@@ -161,6 +161,39 @@ class FreshnessServiceTest {
         assertThat(freshness.stale(active)).containsOnlyKeys(h.accountIdByIban("NL24XMPL0000000002"));
     }
 
+    @Test
+    void aGoodSyncThatBroughtNoNewBalanceDoesNotMakeAnOldFigureLookFresh() {
+        linkBothAsNewAccounts();
+        long id = everyday();
+        // The balance the sync stored is made old, as when the bank stops giving one while every run still ends well.
+        h.jdbc.sql("update balance set balance_date = ? where account_id = ?")
+                .params(LocalDate.now(h.clock).minusDays(15).toString(), id).update();
+
+        Freshness.Stale stale = standing(id).orElseThrow();
+
+        assertThat(stale.reason()).isEqualTo(Freshness.Reason.NOT_UPDATED);
+        assertThat(stale.age()).isEqualTo(Duration.ofDays(15));
+    }
+
+    @Test
+    void anAccountTypedByHandAndJustLinkedIsJudgedByItsBalanceDateUntilTheFirstSyncCameIn() {
+        Account account = h.accounts.addManual("Savings by hand", Scope.PRIVATE, Kind.SAVINGS, null);
+        h.accounts.addBalance(account.id(), Money.eur(10000), LocalDate.now(h.clock).minusDays(60));
+        String now = h.clock.instant().toString();
+        h.jdbc.sql("insert into bank_consent (bank_name, bank_country, psu_type, required_psu_headers, created_at, valid_until, status, status_changed_at) "
+                + "values ('Example Bank', 'NL', 'personal', '', ?, ?, 'authorized', ?)")
+                .params(now, h.clock.instant().plus(Duration.ofDays(90)).toString(), now).update();
+        long consent = h.jdbc.sql("select max(id) from bank_consent").query(Long.class).single();
+        h.sessions.write(consent, "fictional-session");
+        h.jdbc.sql("insert into bank_account (consent_id, uid, iban, currency, account_id, linked_at) values (?, 'uid-x', 'NL24XMPL0000000009', 'EUR', ?, ?)")
+                .params(consent, account.id(), now).update();
+        h.accounts.attachToBank(account.id());
+
+        Freshness.Stale stale = standing(account.id()).orElseThrow();
+
+        assertThat(stale.reason()).as("typed yesterday or not, the figure is 60 days old").isEqualTo(Freshness.Reason.NOT_UPDATED);
+    }
+
     // ----- a consent that ends soon
 
     @Test

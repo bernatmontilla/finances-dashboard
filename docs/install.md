@@ -135,10 +135,11 @@ An update that fails its health check rolls itself back. To go back to the previ
 hand, for an update that started fine but that you do not want:
 
 ```bash
-systemctl --user stop finances-dashboard-update.timer
+systemctl --user stop finances-dashboard-update.timer finances-dashboard-update.service
 cp ~/finances-dashboard/app/previous.jar ~/finances-dashboard/app/.rollback.jar
 mv -f ~/finances-dashboard/app/.rollback.jar ~/finances-dashboard/app/finances-dashboard.jar
 cp ~/finances-dashboard/app/previous-version ~/finances-dashboard/app/installed-version
+systemctl --user reset-failed finances-dashboard.service
 systemctl --user restart finances-dashboard.service
 ```
 

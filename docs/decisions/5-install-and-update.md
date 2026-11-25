@@ -67,4 +67,11 @@ the folder layout and the existing exit codes are unchanged.
 - **Test-only switches**: `FINANCES_CURL_PROTO`, `FINANCES_UID` and `FINANCES_SYSTEMCTL` are read
   only when `FINANCES_TEST=1`, which `scripts/dev/test-update.sh` sets; otherwise each one that is
   set is named in a log line as ignored. This replaces the sentence above about `FINANCES_UID`.
+- **Rollback order**: `roll_back` removes `pending-version` only after the previous jar is back, so a
+  run cut off in between is settled again by the next one instead of leaving the bad jar in place
+  with the release marked as failed.
+- **Known limit**: the probe-then-restart of a pending version can restart a good release that is
+  still starting after a reboot (the timer has `RandomizedDelaySec`, so it rarely coincides). Not
+  changed here: the issue asks for the restart. `FINANCES_HEALTH_URL`, `FINANCES_RELEASE_API` and
+  `FINANCES_DOWNLOAD_BASE` are still honoured outside test mode; gating them is a possible follow-up.
 

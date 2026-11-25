@@ -120,10 +120,10 @@ read_file() { [ -f "$APP_DIR/$1" ] && head -n 1 "$APP_DIR/$1" || true; }
 # Put the previous jar back (the installed version was never changed, so it still names it).
 roll_back() { # $1 = the version that failed
   printf '%s\n' "$1" > "$APP_DIR/failed-version"
-  rm -f -- "$APP_DIR/pending-version"
+  # The marker goes only after the jar is back: a run cut off in between is settled again next time.
   if [ -f "$APP_DIR/previous.jar" ]; then
     mv -f -- "$APP_DIR/previous.jar" "$APP_DIR/$JAR"
-    rm -f -- "$APP_DIR/previous-version"
+    rm -f -- "$APP_DIR/pending-version" "$APP_DIR/previous-version"
     log "put the previous jar back, restarting"
     restart || log "restart of the previous jar failed too; check the service logs"
     old=$(read_file installed-version)
@@ -133,6 +133,7 @@ roll_back() { # $1 = the version that failed
       log "rolled back, but the previous jar is not confirmed healthy; check the service logs"
     fi
   else
+    rm -f -- "$APP_DIR/pending-version"
     log "there was no previous jar to put back; check the service logs"
   fi
 }

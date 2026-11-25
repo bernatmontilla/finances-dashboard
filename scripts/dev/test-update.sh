@@ -240,7 +240,7 @@ check "first install cut off: not marked as failed" test ! -e "$root/app/failed-
 check "first install cut off: the release was installed" test "$(jar_version)" = 1.2.0
 
 # 15. A missing tool is reported, with exit 1, not mistaken for "another update is running".
-for tool in flock curl sha256sum; do
+for tool in flock curl sha256sum cmp; do
   new_installation 1.1.0; publish v1.2.0 1.2.0
   path_without "$tool"
   if run_update env PATH="$root/bin"; then fail "no $tool: update.sh must exit non-zero"; fi
@@ -251,7 +251,11 @@ done
 # 16. The test-only switches do nothing without FINANCES_TEST=1: a file:// source is refused, so
 # nothing is fetched, nothing swapped, and each ignored switch is named.
 new_installation 1.1.0; publish v1.2.0 1.2.0
-run_update env -u FINANCES_TEST || true
+# The real service and systemctl must never be reachable from this case: a fake one is first on PATH.
+mkdir -p "$root/fakebin"; ln -sf "$root/systemctl" "$root/fakebin/systemctl"
+run_update env -u FINANCES_TEST PATH="$root/fakebin:$PATH" FINANCES_SERVICE=no-such-test.service || true
+check "no test mode: the file:// source was refused (or, as root, the run refused to start)" \
+  grep -Eq 'could not read the latest release|refusing to run as root' "$root/out.log"
 check "no test mode: nothing changed" test "$(jar_version)" = 1.1.0 -a "$(restarts)" = 0
 for var in FINANCES_CURL_PROTO FINANCES_UID FINANCES_SYSTEMCTL; do
   check "no test mode: $var is named as ignored" grep -q "ignoring $var" "$root/out.log"

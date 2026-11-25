@@ -1,0 +1,55 @@
+{
+  "transactions": [
+    {
+      "entry_reference": "E-0001",
+      "transaction_amount": {
+        "currency": "EUR",
+        "amount": "12.34"
+      },
+      "creditor": {
+        "name": "Corner Grocery"
+      },
+      "creditor_account": {
+        "iban": "NL10SHOP0000000101"
+      },
+      "debtor_account": {
+        "iban": "NL51XMPL0000000001"
+      },
+      "credit_debit_indicator": "DBIT",
+      "status": "BOOK",
+      "booking_date": "2026-11-20",
+      "value_date": "2026-11-20",
+      "remittance_information": [
+        "Groceries"
+      ],
+      "transaction_id": "T-9001"
+    },
+    {
+      "entry_reference": "E-0002",
+      "transaction_amount": {
+        "currency": "EUR",
+        "amount": "100.00"
+      },
+      "creditor": {
+        "name": "Example Energy"
+      },
+      "creditor_account": {
+        "iban": "NL80SHOP0000000102"
+      },
+      "debtor_account": {
+        "iban": "NL51XMPL0000000001"
+      },
+      "credit_debit_indicator": "DBIT",
+      "status": "BOOK",
+      "booking_date": "2026-11-21",
+      "value_date": "2026-11-21",
+      "remittance_information": [
+        "Energy advance November"
+      ],
+      "transaction_id": "T-9002",
+      "reference_number": "RF00000000000000000001",
+      "reference_number_schema": "SEBG"
+    }
+  ],
+  "continuation_key": "fictional-continuation-key-1"
+}

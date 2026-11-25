@@ -1,0 +1,31 @@
+{
+  "balances": [
+    {
+      "name": "Booked balance",
+      "balance_amount": {
+        "currency": "EUR",
+        "amount": "1234.56"
+      },
+      "balance_type": "CLBD",
+      "last_change_date_time": "2026-11-26T08:30:00Z",
+      "reference_date": "2026-11-26"
+    },
+    {
+      "name": "Available balance",
+      "balance_amount": {
+        "currency": "EUR",
+        "amount": "1134.56"
+      },
+      "balance_type": "ITAV",
+      "last_change_date_time": "2026-11-26T08:30:00Z"
+    },
+    {
+      "name": "Expected balance",
+      "balance_amount": {
+        "currency": "EUR",
+        "amount": "1222.22"
+      },
+      "balance_type": "XPCD"
+    }
+  ]
+}

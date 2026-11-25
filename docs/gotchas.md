@@ -12,6 +12,30 @@ mention the test here.
 - The same transaction can arrive first as pending and later as booked with another reference.
 - SQLite allows one writer: keep write transactions short, and never hold one across an HTTP call.
 
+## Enable Banking (documented, not yet tried against a real account: `docs/decisions/6-enable-banking.md`)
+
+- Restricted mode (own accounts, free) returns only the accounts linked in the Control Panel; any
+  other account is stripped and the result is an **empty list**, not an error. Whitelist first.
+- The Terms limit production use to personal use; business accounts are only tolerated as
+  "evaluation" and can be switched off with notice.
+- Renewing a consent gives a new session id **and new account `uid`s**; match accounts by
+  `identification_hash` (or IBAN), never by `uid`.
+- Full history is available only about an hour after the authorisation, then often 90 days:
+  run the first sync inside the link flow with `strategy=longest`.
+- `entry_reference` is unique per account, often only on booked items, sometimes missing or
+  duplicated; pending items usually have none. `transaction_id` is never an identity.
+- Decide the balance by `balance_type` (`CLBD` = booked), never by its `name`: the reference's own
+  example labels a `CLAV` balance "Booked balance".
+- Amounts are unsigned decimal **strings**; the direction is `credit_debit_indicator`. Currency
+  `XXX` means multi-currency or unknown: not supported.
+- A scheduled fetch (no PSU headers) is a "background" fetch: many banks allow about 4 a day per
+  account; 429 `ASPSP_RATE_LIMIT_EXCEEDED` means wait six hours. PSU headers are all-or-none for the
+  headers the bank lists, else 422 `PSU_HEADER_NOT_PROVIDED`.
+- Base logic on the `error` text code, not the HTTP status (a 401 has several causes); an empty
+  transactions page can still carry a `continuation_key`, and the other parameters must stay equal.
+- `POST /sessions` returns account details only once; store IBAN, name and currency then.
+- The bank list returns logo URLs on another host; never load them in a page (hard rule 7).
+
 ## The target machine
 
 - Low memory, possibly shared with other services: the heap cap is real. Stream large result sets.

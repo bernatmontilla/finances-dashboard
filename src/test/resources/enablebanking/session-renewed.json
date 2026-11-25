@@ -1,0 +1,91 @@
+{
+  "session_id": "22222222-2222-4222-8222-222222222222",
+  "aspsp": {
+    "name": "Example Bank",
+    "country": "NL"
+  },
+  "psu_type": "personal",
+  "access": {
+    "valid_until": "2027-05-24T10:00:00.000000+00:00"
+  },
+  "accounts": [
+    {
+      "account_servicer": {
+        "bic_fi": "XMPLNL2A",
+        "name": "Example Bank"
+      },
+      "name": "Sam Voorbeeld",
+      "details": "Current account",
+      "usage": "PRIV",
+      "cash_account_type": "CACC",
+      "product": "Example product",
+      "currency": "EUR",
+      "psu_status": "Account Holder",
+      "uid": "bbbbbbbb-0000-4000-8000-000000000001",
+      "identification_hash": "ZmljdGlvbmFsLWhhc2gtMQ==.ZmljdGlvbmFsLXNpZy0x",
+      "identification_hashes": [
+        "ZmljdGlvbmFsLWhhc2gtMQ==.ZmljdGlvbmFsLXNpZy0x"
+      ],
+      "account_id": {
+        "iban": "NL51XMPL0000000001"
+      },
+      "all_account_ids": [
+        {
+          "identification": "NL51XMPL0000000001",
+          "scheme_name": "IBAN"
+        }
+      ]
+    },
+    {
+      "account_servicer": {
+        "bic_fi": "XMPLNL2A",
+        "name": "Example Bank"
+      },
+      "name": "Sam Voorbeeld",
+      "details": "Savings account",
+      "usage": "PRIV",
+      "cash_account_type": "SVGS",
+      "product": "Example product",
+      "currency": "EUR",
+      "psu_status": "Account Holder",
+      "uid": "bbbbbbbb-0000-4000-8000-000000000002",
+      "identification_hash": "ZmljdGlvbmFsLWhhc2gtMg==.ZmljdGlvbmFsLXNpZy0y",
+      "identification_hashes": [
+        "ZmljdGlvbmFsLWhhc2gtMg==.ZmljdGlvbmFsLXNpZy0y"
+      ],
+      "account_id": {
+        "iban": "NL24XMPL0000000002"
+      },
+      "all_account_ids": [
+        {
+          "identification": "NL24XMPL0000000002",
+          "scheme_name": "IBAN"
+        }
+      ]
+    },
+    {
+      "account_servicer": {
+        "bic_fi": "XMPLNL2A",
+        "name": "Example Bank"
+      },
+      "name": "Sam Voorbeeld",
+      "details": "Multi-currency account",
+      "usage": "PRIV",
+      "cash_account_type": "CACC",
+      "product": "Example product",
+      "currency": "XXX",
+      "psu_status": "Account Holder",
+      "uid": "bbbbbbbb-0000-4000-8000-000000000003",
+      "identification_hash": "ZmljdGlvbmFsLWhhc2gtMw==.ZmljdGlvbmFsLXNpZy0z",
+      "identification_hashes": [
+        "ZmljdGlvbmFsLWhhc2gtMw==.ZmljdGlvbmFsLXNpZy0z"
+      ],
+      "all_account_ids": [
+        {
+          "identification": "000000000005",
+          "scheme_name": "BBAN"
+        }
+      ]
+    }
+  ]
+}

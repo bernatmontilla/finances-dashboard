@@ -158,9 +158,9 @@ public final class CsvDetector {
                 b.name = column;
             } else if (h.contains("descr") || h.contains("memo") || h.contains("details") || h.contains("omschrijving")) {
                 b.description = column;
-            } else if (h.contains("ref")) {
-                b.reference = column;
             }
+            // No reference column is proposed: a "reference" of a bank export is often a mandate or a placeholder
+            // that repeats, and a repeated reference means one transaction. The owner chooses it knowingly.
         }
         if (b.amount >= 0 && (b.debit >= 0 || b.credit >= 0)) {
             // Both kinds of column named: a debit/credit pair is the more specific of the two.

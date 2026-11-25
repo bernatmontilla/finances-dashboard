@@ -205,8 +205,9 @@ public class AccountService {
     /**
      * Records the balance a CSV file ended with (the balance-after column of its newest row), as one more
      * entry in the history: nothing the owner typed is changed or removed. Importing the same file again
-     * finds the same date and amount and adds nothing; a balance from an older date than the latest one
-     * is not recorded, so an old file never pushes a newer figure out of sight.
+     * finds the same date and amount and adds nothing; when the history already has an entry from the same
+     * or a later date (typed or corrected by the owner, or imported) the file's one is left out, so an
+     * import never pushes a figure the owner entered out of sight.
      */
     @Transactional
     public ImportedBalance recordImportedBalance(long accountId, Money amount, LocalDate date) {
@@ -227,7 +228,7 @@ public class AccountService {
         if (same > 0) {
             return ImportedBalance.UNCHANGED;
         }
-        int newer = jdbc.sql("select count(*) from balance where account_id = ? and balance_date > ?")
+        int newer = jdbc.sql("select count(*) from balance where account_id = ? and balance_date >= ?")
                 .params(accountId, date.toString())
                 .query(Integer.class)
                 .single();

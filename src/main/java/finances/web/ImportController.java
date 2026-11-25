@@ -64,6 +64,12 @@ class ImportController {
         return previewPage(model, account, token, bytes, mapping);
     }
 
+    /** A reload of a result page asks the browser to post again; opening one by its address goes back to the upload page. */
+    @GetMapping({"/accounts/{id}/import/preview", "/accounts/{id}/import/confirm"})
+    String backToUpload(@PathVariable long id) {
+        return "redirect:/accounts/" + id + "/import";
+    }
+
     /** Shows the preview again with the settings the owner changed; nothing is imported. */
     @PostMapping("/accounts/{id}/import/preview")
     String preview(@PathVariable long id, @RequestParam Map<String, String> form, Model model, HttpServletResponse response) {

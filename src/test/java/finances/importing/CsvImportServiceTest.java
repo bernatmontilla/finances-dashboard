@@ -122,7 +122,8 @@ class CsvImportServiceTest {
         assertThat(mapping.dateFormat()).isEqualTo("yyyy-MM-dd");
         assertThat(mapping.decimal()).isEqualTo('.');
         assertThat(mapping).extracting(CsvMapping::date, CsvMapping::amount, CsvMapping::name, CsvMapping::iban,
-                CsvMapping::description, CsvMapping::reference).containsExactly(0, 1, 2, 3, 4, 5);
+                CsvMapping::description, CsvMapping::reference).containsExactly(0, 1, 2, 3, 4, -1);
+        mapping = mapping.toBuilder().reference(5).build(); // a reference is never proposed: the owner chooses it
 
         ImportReport first = importing.importFile(csv.id(), bytes, mapping);
         assertThat(first).extracting(ImportReport::rows, ImportReport::added, ImportReport::refused).containsExactly(4, 4, 0);
@@ -195,6 +196,57 @@ class CsvImportServiceTest {
         ImportReport report = importDetected(text("\n\nDate;Amount\n01-06-2026;-1,00\n"));
 
         assertThat(report).extracting(ImportReport::rows, ImportReport::added, ImportReport::refused).containsExactly(1, 1, 0);
+    }
+
+    @Test
+    void aRepeatedReferenceIsRefusedSoItNeverOverwritesAnotherTransaction() {
+        CsvMapping mapping = new CsvMapping(';', CsvMapping.UTF_8, true, "dd-MM-yyyy", ',', 0, 1, -1, -1, -1, -1, -1, 2, -1);
+        byte[] bytes = text("Date;Amount;Reference\n01-06-2026;-12,34;NOTPROVIDED\n02-06-2026;-56,78;NOTPROVIDED\n03-06-2026;-1,00;R-3\n04-06-2026;-2,00;\n05-06-2026;-3,00;\n");
+
+        ImportReport report = importing.importFile(csv.id(), bytes, mapping);
+
+        assertThat(report.added()).isEqualTo(4);
+        assertThat(report.refusedRows()).containsExactly(new RefusedRow(3, RefusalReason.DUPLICATE_REFERENCE));
+        assertThat(transactions.forAccount(csv.id(), 0).items()).extracting(t -> t.amount().cents())
+                .containsExactlyInAnyOrder(-1234L, -100L, -200L, -300L);
+    }
+
+    @Test
+    void theDetectorNeverProposesAReferenceColumn() {
+        assertThat(CsvDetector.detect(text("Date;Amount;Mandate reference\n01-06-2026;-1,00;EE-0001\n")).reference()).isEqualTo(-1);
+    }
+
+    @Test
+    void aBalanceTheOwnerCorrectedOrTypedOnTheSameDayIsNotPushedAside() {
+        CsvMapping mapping = new CsvMapping(';', CsvMapping.UTF_8, true, "dd-MM-yyyy", ',', 0, 1, -1, -1, -1, -1, -1, -1, 2);
+        byte[] bytes = text("Date;Amount;Balance\n10-06-2026;-1,00;1.000,00\n");
+        importing.importFile(csv.id(), bytes, mapping);
+        BalanceEntry imported = accounts.history(csv.id()).get(0);
+        accounts.correctBalance(csv.id(), imported.id(), finances.money.Money.eur(101000), imported.date());
+
+        ImportReport again = importing.importFile(csv.id(), bytes, mapping);
+
+        assertThat(again.balance()).isEqualTo(BalanceResult.OLDER);
+        assertThat(accounts.history(csv.id())).extracting(e -> e.amount().cents()).containsExactly(101000L);
+
+        Account other = accounts.addCsv("Typed first", Scope.PRIVATE, Kind.CURRENT, null);
+        accounts.addBalance(other.id(), finances.money.Money.eur(105000), LocalDate.of(2026, 6, 10));
+        assertThat(importing.importFile(other.id(), bytes, mapping).balance()).isEqualTo(BalanceResult.OLDER);
+        assertThat(accounts.history(other.id())).extracting(e -> e.amount().cents()).containsExactly(105000L);
+    }
+
+    @Test
+    void whenARowCouldNotBeReadTheBalanceIsLeftAloneBecauseItMayBeTheNewestRow() {
+        CsvMapping mapping = new CsvMapping(';', CsvMapping.UTF_8, true, "dd-MM-yyyy", ',', 0, 1, -1, -1, -1, -1, -1, -1, 2);
+
+        ImportReport report = importing.importFile(csv.id(),
+                text("Date;Amount;Balance\n19-11-2026;-10,00;990,00\n20-11-2026;1,234;2.224,00\n".replace("19-11-2026", "13-06-2026").replace("20-11-2026", "14-06-2026")),
+                mapping);
+
+        assertThat(report.added()).isEqualTo(1);
+        assertThat(report.refused()).isEqualTo(1);
+        assertThat(report.balance()).isEqualTo(BalanceResult.NOT_DETERMINABLE);
+        assertThat(accounts.history(csv.id())).isEmpty();
     }
 
     @Test

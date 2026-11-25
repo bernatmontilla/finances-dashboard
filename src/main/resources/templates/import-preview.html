@@ -16,6 +16,7 @@
 
     <h2 th:text="#{import.preview.head}"></h2>
     <p th:if="${view.empty}" th:text="#{import.preview.noRows}"></p>
+    <p th:unless="${view.empty}" class="muted" th:text="#{import.preview.scrollHint}"></p>
     <div class="scroll" th:unless="${view.empty}">
       <table class="preview">
         <thead>
@@ -33,6 +34,21 @@
         </tbody>
       </table>
     </div>
+
+    <h2 th:text="#{import.result}"></h2>
+    <p th:unless="${view.complete}" class="notice" th:text="#{import.incomplete}"></p>
+    <th:block th:if="${view.complete}">
+      <p th:text="#{import.summary(${view.read}, ${view.importable}, ${view.refusedCount})}"></p>
+      <p th:if="${view.hasBalance()}" th:text="#{import.balanceFound(${view.balance}, ${view.balanceDate})}"></p>
+      <p th:if="${view.balanceUndeterminable}" class="notice" th:text="#{import.balance.not_determinable}"></p>
+      <ul class="list" th:if="${view.hasRefused()}">
+        <li th:each="r : ${view.refused}" class="error">
+          <span th:text="#{import.refusedRow(${r.row})}"></span>
+          <span th:text="#{${r.reasonKey}}"></span>
+        </li>
+      </ul>
+      <p th:if="${view.refusedCount gt view.refused.size()}" class="muted" th:text="#{import.moreRefused}"></p>
+    </th:block>
 
     <form method="post" th:action="@{/accounts/{id}/import/confirm(id=${view.account.id})}">
       <input type="hidden" name="token" th:value="${view.token}">
@@ -81,21 +97,6 @@
           </th:block>
         </select>
       </p>
-
-      <h2 th:text="#{import.result}"></h2>
-      <p th:unless="${view.complete}" class="notice" th:text="#{import.incomplete}"></p>
-      <th:block th:if="${view.complete}">
-        <p th:text="#{import.summary(${view.read}, ${view.importable}, ${view.refusedCount})}"></p>
-        <p th:if="${view.hasBalance()}" th:text="#{import.balanceFound(${view.balance}, ${view.balanceDate})}"></p>
-        <p th:if="${view.balanceUndeterminable}" class="notice" th:text="#{import.balance.not_determinable}"></p>
-        <ul class="list" th:if="${view.hasRefused()}">
-          <li th:each="r : ${view.refused}" class="error">
-            <span th:text="#{import.refusedRow(${r.row})}"></span>
-            <span th:text="#{${r.reasonKey}}"></span>
-          </li>
-        </ul>
-        <p th:if="${view.refusedCount gt view.refused.size()}" class="muted" th:text="#{import.moreRefused}"></p>
-      </th:block>
 
       <p class="actions">
         <button type="submit" th:text="#{import.confirm}"></button>

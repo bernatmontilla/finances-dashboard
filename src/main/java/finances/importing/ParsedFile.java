@@ -13,7 +13,7 @@ import java.util.List;
  * @param head the first records of the file as read, the header row included
  * @param columns the most columns seen in the first records
  * @param balance the balance after the newest row, when there is one and it can be told which row that is
- * @param balanceUndeterminable the file has a balance column but its newest date holds rows with different balances in an order that cannot be told
+ * @param balanceUndeterminable the file has a balance column but which row is the newest one cannot be told: rows were refused, or its newest date holds rows with different balances in an order that cannot be told
  */
 public record ParsedFile(int rows, List<DeliveredTransaction> transactions, List<RefusedRow> refused,
         List<List<String>> head, int columns, Balance balance, boolean balanceUndeterminable) {

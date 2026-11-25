@@ -67,11 +67,20 @@
   and refused) and checks no name, IBAN, reference or amount of the file appears.
 - **`raw`**: the row as read, its cells joined with tabs, is stored in `transactions.raw` next to the
   normalised fields, as for the bank.
-- **Known limits**: the store's identity is the reference, else a fingerprint of date, amount, counterparty
+- **Reference**: never proposed by the detector (a bank's "reference" is often a mandate or a placeholder
+  that repeats, and a repeated reference means one transaction in the store). When the owner maps it, a row
+  whose reference came earlier in the same file is refused (`DUPLICATE_REFERENCE`), so it cannot overwrite
+  the first. The same reference in *different* files is the store's rule (#8): it is the same transaction.
+- **Balance, stricter**: it is added only when the history has nothing from the same or a later date
+  (`balance_date >= ?`), so an import never pushes aside a figure the owner typed or corrected; and when
+  any row of the file was refused the balance is left alone (the refused row may be the newest).
+- **Upload on disk**: `spring.servlet.multipart.file-size-threshold` equals the size limit, so an upload is
+  kept in memory while the request is read and never touches the temp folder.
+- **Known limits**: a file with an unsigned amount and a separate direction column (debit/credit marker)
+  cannot be mapped (spec: no sign column), and would be read as all income; ask on the issue if a bank
+  needs it.  the store's identity is the reference, else a fingerprint of date, amount, counterparty
   and description, so importing the same file again with a *different* mapping (for example the description
-  column changed, or the reference column added) can store the rows again. A balance-after on the same date
-  as a balance the owner typed, with another amount, is added and becomes the latest one (the owner's entry
-  stays in the history); the report says "added to the history". The header row is the first line that is
+  column changed, or the reference column added) can store the rows again. The header row is the first line that is
   not blank.
 - **Not done, on purpose**: bank presets, other formats (MT940, CAMT), categories, export, changing an
   account's source, importing into a manual account, a stale limit for the imported balance (its date and age

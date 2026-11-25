@@ -106,6 +106,7 @@ public final class CsvFile {
         private final List<List<String>> head = new ArrayList<>();
         private int record;
         private boolean headerSeen;
+        private final Set<String> references = new HashSet<>();
         private int rows;
         private int columns;
         private LocalDate firstDate;
@@ -162,9 +163,15 @@ public final class CsvFile {
                 }
             }
 
+            String reference = optional(cells, mapping.reference());
+            if (!reference.isEmpty() && !references.add(reference)) {
+                // The store identifies a transaction by its reference: a repeat would overwrite the first one.
+                throw new RowRefused(RefusalReason.DUPLICATE_REFERENCE);
+            }
+
             transactions.add(new DeliveredTransaction(date, null, cents, Money.EUR, optional(cells, mapping.name()),
                     optional(cells, mapping.iban()), optional(cells, mapping.description()), TransactionStatus.BOOKED,
-                    optional(cells, mapping.reference()), String.join("\t", cells)));
+                    reference, String.join("\t", cells)));
 
             if (firstDate == null) {
                 firstDate = date;
@@ -228,7 +235,10 @@ public final class CsvFile {
         ParsedFile result() {
             ParsedFile.Balance balance = null;
             boolean undeterminable = false;
-            if (!atNewest.isEmpty()) {
+            if (!atNewest.isEmpty() && !refused.isEmpty()) {
+                // A row that could not be read may be the newest one: which balance is last cannot be told.
+                undeterminable = true;
+            } else if (!atNewest.isEmpty()) {
                 Set<Long> distinct = new HashSet<>();
                 for (long[] row : atNewest) {
                     distinct.add(row[1]);

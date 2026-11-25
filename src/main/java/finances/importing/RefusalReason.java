@@ -16,5 +16,7 @@ public enum RefusalReason {
     DEBIT_AND_CREDIT,
     /** A debit or credit column holds a sign: which way it points would be a guess. */
     SIGN_IN_DEBIT_CREDIT,
-    BALANCE_INVALID
+    BALANCE_INVALID,
+    /** The same reference came earlier in the file: a reference identifies one transaction, so a repeat would overwrite it. */
+    DUPLICATE_REFERENCE
 }

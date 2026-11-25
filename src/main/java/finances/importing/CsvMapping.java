@@ -168,6 +168,11 @@ public record CsvMapping(char delimiter, String encoding, boolean header, String
             return this;
         }
 
+        public Builder reference(int column) {
+            reference = column;
+            return this;
+        }
+
         public Builder description(int column) {
             description = column;
             return this;

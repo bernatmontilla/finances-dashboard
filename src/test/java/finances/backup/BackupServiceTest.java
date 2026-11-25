@@ -426,6 +426,257 @@ class BackupServiceTest {
         assertNothingStaged(folder);
     }
 
+    // ----- a restore that goes wrong on a full disk (issue #32)
+
+    /** Real disk operations, except the ones {@code failing} names ("move a -> b", "delete a", "space"), which throw as a full disk would. */
+    private static final class FlakyDisk implements BackupService.Disk {
+        private final java.util.function.Predicate<String> failing;
+        private final long space;
+        final List<String> seen = new ArrayList<>();
+
+        FlakyDisk(java.util.function.Predicate<String> failing, long space) {
+            this.failing = failing;
+            this.space = space;
+        }
+
+        private void attempt(String what) throws IOException {
+            seen.add(what);
+            if (failing.test(what)) {
+                throw new IOException("No space left on device (test)");
+            }
+        }
+
+        @Override
+        public void move(Path from, Path to, java.nio.file.CopyOption... options) throws IOException {
+            attempt("move " + from.getFileName() + " -> " + to.getFileName());
+            BackupService.Disk.super.move(from, to, options);
+        }
+
+        @Override
+        public void deleteIfExists(Path file) throws IOException {
+            attempt("delete " + file.getFileName());
+            BackupService.Disk.super.deleteIfExists(file);
+        }
+
+        @Override
+        public long usableSpace(Path folder) {
+            return space;
+        }
+    }
+
+    private static BackupService service(Path folder, BackupService.Disk disk) {
+        return new BackupService(folder, new DatabaseGate(), "1.2.3", BackupFixtures.CLOCK, Duration.ofSeconds(5), disk);
+    }
+
+    /** A data folder with data of its own and a backup that restores but cannot be migrated. */
+    private record Unmigratable(Path folder, Path backup, String before) {
+    }
+
+    private Unmigratable unmigratable() throws Exception {
+        Path other = folder("other");
+        BackupFixtures broken = BackupFixtures.open(other).fill();
+        broken.jdbc.sql("update flyway_schema_history set checksum = 12345 where version = '3'").update();
+        Path file = backup(other, temp.resolve("broken.zip"));
+        Path folder = folder("data");
+        BackupFixtures live = BackupFixtures.open(folder).fill();
+        live.accounts.addManual("Only here", finances.accounts.Scope.PRIVATE, finances.accounts.Kind.CURRENT, "");
+        return new Unmigratable(folder, file, BackupFixtures.open(folder).content());
+    }
+
+    private void assertOldDatabaseInUse(Unmigratable setup, BackupService service) throws Exception {
+        assertThat(content(setup.folder())).isEqualTo(setup.before());
+        assertThat(service.hasPrevious()).isFalse();
+        assertThat(setup.folder().resolve("finances.replaced.db")).doesNotExist();
+    }
+
+    /** What a database file holds, read from a copy in a folder of its own. */
+    private String contentOfCopy(Path database, String name) throws Exception {
+        Path copy = folder(name);
+        Files.copy(database, copy.resolve("finances.db"));
+        return content(copy);
+    }
+
+    private static boolean movedIn(boolean[] flag, String what) {
+        if (what.matches("move restore-.* -> finances\\.db") || what.equals("move finances.previous.db -> finances.db")) {
+            flag[0] = true;
+        }
+        return flag[0];
+    }
+
+    @Test
+    void aFailedMigrationPutsTheOldDatabaseBackEvenWhenTheRestoredFileCouldBeMovedBackNowhere() throws Exception {
+        // A restore replaces the half-migrated file with the old database: it never depends on moving it away.
+        Unmigratable setup = unmigratable();
+        FlakyDisk disk = new FlakyDisk(what -> what.matches("move finances\\.db -> (restore-.*|finances\\.previous\\.db)"), Long.MAX_VALUE);
+        BackupService service = service(setup.folder(), disk);
+        RestorePlan plan = service.stage(setup.backup());
+
+        assertThatThrownBy(() -> service.restore(plan.token(), "RESTORE")).isInstanceOfSatisfying(BackupException.class, e -> {
+            assertThat(e.reason()).isEqualTo(Reason.MIGRATION_FAILED);
+            assertThat(e.getCause()).as("the original error is the one reported").isNotInstanceOf(IOException.class);
+        });
+        assertOldDatabaseInUse(setup, service);
+    }
+
+    @Test
+    void whenTheSidecarFilesCannotBeDeletedTheOldDatabaseIsNotPutNextToThemButIsKept() throws Exception {
+        Unmigratable setup = unmigratable();
+        boolean[] movedIn = {false};
+        FlakyDisk disk = new FlakyDisk(what -> movedIn(movedIn, what) && what.startsWith("delete finances.db-"), Long.MAX_VALUE);
+        BackupService service = service(setup.folder(), disk);
+        RestorePlan plan = service.stage(setup.backup());
+
+        assertThatThrownBy(() -> service.restore(plan.token(), "RESTORE")).isInstanceOfSatisfying(BackupException.class, e -> {
+            assertThat(e.reason()).isEqualTo(Reason.OLD_DATABASE_ASIDE);
+            assertThat(e.getMessage()).doesNotContain("is back in use");
+            assertThat(e.getCause()).isNotInstanceOf(IOException.class);
+            assertThat(e.getCause().getSuppressed()).extracting(Throwable::getMessage).anyMatch(m -> m.contains("No space left"));
+        });
+        assertThat(contentOfCopy(setup.folder().resolve("finances.replaced.db"), "kept")).as("nothing was lost").isEqualTo(setup.before());
+        assertThat(setup.folder().resolve("finances.db")).as("a database file is still there").isRegularFile();
+    }
+
+    @Test
+    void whenTheOldDatabaseCannotBePutBackTheMessageSaysSoAndNothingIsDeleted() throws Exception {
+        Unmigratable setup = unmigratable();
+        FlakyDisk disk = new FlakyDisk(what -> what.equals("move finances.replaced.db -> finances.db"), Long.MAX_VALUE);
+        BackupService service = service(setup.folder(), disk);
+        RestorePlan plan = service.stage(setup.backup());
+
+        assertThatThrownBy(() -> service.restore(plan.token(), "RESTORE")).isInstanceOfSatisfying(BackupException.class, e -> {
+            assertThat(e.reason()).isEqualTo(Reason.OLD_DATABASE_ASIDE);
+            assertThat(e.getMessage()).doesNotContain("still in use").doesNotContain("is back in use");
+            assertThat(e.getCause()).as("the original error is the cause").isNotInstanceOf(IOException.class);
+            assertThat(e.getCause().getSuppressed()).extracting(Throwable::getMessage).anyMatch(m -> m.contains("No space left"));
+        });
+        assertThat(contentOfCopy(setup.folder().resolve("finances.replaced.db"), "kept")).as("the old database is kept, not deleted").isEqualTo(setup.before());
+        assertThat(setup.folder().resolve("finances.db")).isRegularFile();
+    }
+
+    /** A data folder with data of its own, and a previous database that cannot be migrated: an undo that fails. */
+    private Unmigratable undoThatCannotBeMigrated() throws Exception {
+        Path other = folder("other");
+        BackupFixtures broken = BackupFixtures.open(other).fill();
+        broken.jdbc.sql("update flyway_schema_history set checksum = 12345 where version = '3'").update();
+        broken.jdbc.sql("pragma wal_checkpoint(truncate)").query().listOfRows();
+        Path folder = folder("data");
+        BackupFixtures live = BackupFixtures.open(folder).fill();
+        live.accounts.addManual("Only here", finances.accounts.Scope.PRIVATE, finances.accounts.Kind.CURRENT, "");
+        String before = BackupFixtures.open(folder).content();
+        Path backup = backup(other, temp.resolve("broken.zip"));
+        try (ZipFile zip = new ZipFile(backup.toFile())) {
+            Files.write(folder.resolve("finances.previous.db"), zip.getInputStream(zip.getEntry("finances.db")).readAllBytes());
+        }
+        return new Unmigratable(folder, backup, before);
+    }
+
+    @Test
+    void anUndoThatFailsWithAllMovesWorkingKeepsBothDatabases() throws Exception {
+        Unmigratable setup = undoThatCannotBeMigrated();
+        byte[] previousBytes = Files.readAllBytes(setup.folder().resolve("finances.previous.db"));
+        BackupService service = service(setup.folder(), new FlakyDisk(what -> false, Long.MAX_VALUE));
+
+        assertThatThrownBy(() -> service.undoRestore("UNDO")).isInstanceOfSatisfying(BackupException.class,
+                e -> assertThat(e.reason()).isEqualTo(Reason.MIGRATION_FAILED));
+        assertThat(Files.readAllBytes(setup.folder().resolve("finances.previous.db"))).isEqualTo(previousBytes);
+        assertThat(content(setup.folder())).isEqualTo(setup.before());
+    }
+
+    @Test
+    void anUndoWhoseMigratedFileCannotBeMovedBackNeverOverwritesThePreviousDatabase() throws Exception {
+        Unmigratable setup = undoThatCannotBeMigrated();
+        byte[] previousBytes = Files.readAllBytes(setup.folder().resolve("finances.previous.db"));
+        FlakyDisk disk = new FlakyDisk(what -> what.equals("move finances.db -> finances.previous.db"), Long.MAX_VALUE);
+        BackupService service = service(setup.folder(), disk);
+
+        assertThatThrownBy(() -> service.undoRestore("UNDO")).isInstanceOfSatisfying(BackupException.class, e -> {
+            assertThat(e.reason()).isEqualTo(Reason.OLD_DATABASE_ASIDE);
+            assertThat(e.getCause().getSuppressed()).extracting(Throwable::getMessage).anyMatch(m -> m.contains("No space left"));
+        });
+        // The previous database is still the file in use, and the database that was in use is kept aside.
+        assertThat(Files.readAllBytes(setup.folder().resolve("finances.db"))).as("the previous database, untouched").isEqualTo(previousBytes);
+        assertThat(contentOfCopy(setup.folder().resolve("finances.replaced.db"), "kept")).isEqualTo(setup.before());
+    }
+
+    @Test
+    void anUndoWhoseSidecarFilesCannotBeDeletedLosesNeitherDatabase() throws Exception {
+        Unmigratable setup = undoThatCannotBeMigrated();
+        byte[] previousBytes = Files.readAllBytes(setup.folder().resolve("finances.previous.db"));
+        boolean[] movedIn = {false};
+        FlakyDisk disk = new FlakyDisk(what -> movedIn(movedIn, what) && what.startsWith("delete finances.db-"), Long.MAX_VALUE);
+        BackupService service = service(setup.folder(), disk);
+
+        assertThatThrownBy(() -> service.undoRestore("UNDO")).isInstanceOfSatisfying(BackupException.class,
+                e -> assertThat(e.reason()).isEqualTo(Reason.OLD_DATABASE_ASIDE));
+        assertThat(Files.readAllBytes(setup.folder().resolve("finances.db"))).as("the previous database is back in the file in use").isEqualTo(previousBytes);
+        assertThat(contentOfCopy(setup.folder().resolve("finances.replaced.db"), "kept")).isEqualTo(setup.before());
+    }
+
+    private long databaseBytesOf(Path backup) throws IOException {
+        try (ZipFile zip = new ZipFile(backup.toFile())) {
+            return zip.getEntry("finances.db").getSize();
+        }
+    }
+
+    @Test
+    void aBackupThatNeedsMoreRoomThanTheDiskHasIsRefusedBeforeAnythingIsExtracted() throws Exception {
+        Path folder = folder("data");
+        BackupFixtures.open(folder).fill();
+        Path file = backup(folder, temp.resolve("backup.zip"));
+        long bytes = databaseBytesOf(file);
+        long needed = bytes + Math.max(BackupService.SPACE_MARGIN, bytes);
+        String before = content(folder);
+
+        BackupService tight = service(folder, new FlakyDisk(what -> false, needed - 1));
+        assertThatThrownBy(() -> tight.stage(file)).isInstanceOfSatisfying(BackupException.class,
+                e -> assertThat(e.reason()).isEqualTo(Reason.NOT_ENOUGH_SPACE));
+        assertThat(content(folder)).isEqualTo(before);
+        assertThat(tight.hasPrevious()).isFalse();
+        assertNothingStaged(folder);
+
+        // Exactly enough is enough.
+        BackupService enough = service(folder, new FlakyDisk(what -> false, needed));
+        RestorePlan plan = enough.stage(file);
+        enough.restore(plan.token(), "RESTORE");
+        assertThat(content(folder)).isEqualTo(before);
+    }
+
+    @Test
+    void aFileThatStatesAnAbsurdSizeIsRefusedForWantOfRoomWithoutOverflow() throws Exception {
+        Path folder = folder("data");
+        BackupFixtures.open(folder).fill();
+        Path file = backup(folder, temp.resolve("backup.zip"));
+        Path huge = rewriteManifest(file, "huge.zip", text -> text.replaceAll("databaseBytes=\\d+", "databaseBytes=" + Long.MAX_VALUE));
+
+        BackupService service = service(folder, new FlakyDisk(what -> false, Long.MAX_VALUE - 1));
+        assertThatThrownBy(() -> service.stage(huge)).isInstanceOfSatisfying(BackupException.class,
+                e -> assertThat(e.reason()).isEqualTo(Reason.NOT_ENOUGH_SPACE));
+        assertNothingStaged(folder);
+    }
+
+    @Test
+    void aRefusedUploadLeavesNothingInTheScratchFolder() throws Exception {
+        Path folder = folder("data");
+        BackupFixtures.open(folder).fill();
+        Path file = backup(folder, temp.resolve("backup.zip"));
+        BackupService tight = service(folder, new FlakyDisk(what -> false, 0));
+        try (java.io.InputStream upload = Files.newInputStream(file)) {
+            assertThatThrownBy(() -> tight.stage(upload)).isInstanceOfSatisfying(BackupException.class,
+                    e -> assertThat(e.reason()).isEqualTo(Reason.NOT_ENOUGH_SPACE));
+        }
+        assertNothingStaged(folder);
+    }
+
+    @Test
+    void aFileThatHoldsMoreThanItsManifestStatesIsRefusedAndNothingStaysStaged() throws Exception {
+        Path folder = folder("data");
+        BackupFixtures.open(folder).fill();
+        Path file = backup(folder, temp.resolve("backup.zip"));
+        long bytes = databaseBytesOf(file);
+        Path understated = rewriteManifest(file, "understated.zip", text -> text.replaceAll("databaseBytes=\\d+", "databaseBytes=" + (bytes / 2)));
+        assertRefused(folder, understated, Reason.DAMAGED);
+    }
+
     // ----- the gate
 
     @Test

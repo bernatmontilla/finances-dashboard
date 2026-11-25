@@ -218,12 +218,30 @@ files there; the application never deletes your backups.
 A restore briefly needs room for the uploaded file about three times over in `tmp/` (the upload, its copy and the checked database), so leave free space of a few times the backup size on the disk of the data folder; the command line restore needs one copy less.
 
 If the disk is full, a backup fails without leaving a partial file and the database in use is
-untouched; so is a restore. If a restore is cut off by a power failure at the very moment of the swap, the next start puts the
+untouched; so is a restore. A restore is refused before it starts when the data folder has less free
+space than the backup's database plus the larger of 16 MiB and the database's own size again (the
+size is what the file states about itself, so it is checked against the disk first). If a restore is cut off by a power failure at the very moment of the swap, the next start puts the
 database from before back (`finances.replaced.db` becomes `finances.db` when there is no
 `finances.db`). If a file `finances.replaced.db` is still there next to a working database, an
 earlier restore could not finish tidying up: the file may hold data that exists nowhere else, so a
 restore or undo is refused until you have looked at it. Keep it somewhere safe or delete it, with the
 service stopped.
+
+If a restore or an undo fails and the message says the database that was in use could not be put back,
+that database is kept as `finances.replaced.db` and nothing was deleted. Do not delete or overwrite
+any file before you have read this. Stop the service first (`systemctl --user stop finances-dashboard.service`);
+the `finances.db-wal` and `finances.db-shm` files next to `finances.db` belong to the half-finished
+database and may go. What to do depends on what you pressed:
+
+- **A restore failed**: `finances.db` holds the half-migrated copy of the backup (you still have the
+  backup file) and `finances.replaced.db` holds your data. Run
+  `rm -f finances.db-wal finances.db-shm && mv -f finances.replaced.db finances.db`, start the service.
+- **An undo failed**: `finances.db` holds the earlier database you were going back to, which may exist
+  nowhere else, and `finances.replaced.db` holds what was in use. Do not move anything over
+  `finances.db`. Run `rm -f finances.db-wal finances.db-shm && mv -n finances.db finances.previous.db &&
+  mv -n finances.replaced.db finances.db`, start the service: the earlier database is back under its own name
+  (the undo can be tried again, or the file kept) and your data is in use again. If `mv -n` says nothing and
+  `finances.previous.db` is still not there, stop and ask for help; do not delete anything.
 
 ## Where the logs are
 

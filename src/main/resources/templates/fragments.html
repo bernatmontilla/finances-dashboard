@@ -116,7 +116,7 @@
     <span class="balance">
       <strong th:text="#{'fixedcosts.status.' + ${row.status}}"></strong>
       <span class="muted nowrap" th:if="${row.hasExpected()}" th:text="#{fixedcosts.expected(${row.expected})}"></span>
-      <span class="muted nowrap" th:if="${row.hasPayment()}" th:text="#{fixedcosts.paidBy(${row.paidOn}, ${row.paidAmount})}"></span>
+      <span class="muted" th:if="${row.hasPayment()}" th:text="#{fixedcosts.paidBy(${row.paidOn}, ${row.paidAmount})}"></span>
       <span class="pending" th:if="${row.overdue}" th:text="#{fixedcosts.overdue}"></span>
       <span class="muted nowrap" th:if="${row.hasNextDue()}" th:text="#{fixedcosts.nextDue(${row.nextDue})}"></span>
       <span class="muted nowrap" th:if="${row.hasEndedOn()}" th:text="#{fixedcosts.endedOn(${row.endedOn})}"></span>

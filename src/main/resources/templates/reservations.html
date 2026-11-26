@@ -45,9 +45,6 @@
             <form method="post" th:action="@{/reservations/{id}/reopen(id=${row.id})}" class="inline">
               <button type="submit" class="link" th:text="#{reservation.reopen}"></button>
             </form>
-            <form method="post" th:action="@{/reservations/{id}/remove(id=${row.id})}" class="inline">
-              <button type="submit" class="link" th:text="#{reservation.remove}"></button>
-            </form>
           </li>
         </ul>
       </th:block>

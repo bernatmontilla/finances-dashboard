@@ -32,7 +32,7 @@ ahead) keep the product far from overflowing.
   closed, reopening is refused (`NEXT_ROUND_CHANGED`) and nothing changes: two open rounds would reserve twice and an edited round is the owner's
   data. Closing and reopening do not set `changed_at`, so they never make a round count as touched.
 - A closed reservation is not edited (`CLOSED`), it is reopened first.
-- Remove is the owner's own POST (a button on the edit page and in the closed list). A round that followed it stays; `follows_id` becomes null
+- Remove is the owner's own POST (a button on the edit page; a closed one is reopened first, so history is never one tap from gone). A round that followed it stays; `follows_id` becomes null
   (`on delete set null`).
 
 ## Where things live

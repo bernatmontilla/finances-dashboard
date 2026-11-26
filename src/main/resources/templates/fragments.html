@@ -10,6 +10,7 @@
     <a th:href="@{/accounts}" th:text="#{nav.accounts}"></a>
     <a th:href="@{/transactions}" th:text="#{nav.transactions}"></a>
     <a th:href="@{/reservations}" th:text="#{nav.reservations}"></a>
+    <a th:href="@{/fixed-costs}" th:text="#{nav.fixedCosts}"></a>
     <a th:href="@{/settings}" th:text="#{nav.settings}"></a>
   </nav>
 
@@ -95,6 +96,38 @@
     <span th:if="${row.yearly}" class="muted" th:text="#{reservation.yearly.mark}"></span>
     <span class="amount" th:text="#{reservation.reservedOf(${row.reserved}, ${row.amount})}"></span>
   </span>
+
+  <!-- One fixed cost: what it is, where it stands this month (a word, never a colour alone) and what can be done with it. -->
+  <li th:fragment="fixedCost(row)">
+    <strong th:text="${row.name}"></strong>
+    <span class="amount" th:text="#{fixedcosts.amountEvery(${row.amount}, #{${row.rhythmKey}})}"></span>
+    <span class="muted" th:if="${row.hasCounterparty()}" th:text="${row.counterparty}"></span>
+    <span class="muted" th:if="${row.hasAccount()}" th:text="#{fixedcosts.from(${row.account})}"></span>
+    <span class="balance">
+      <strong th:text="#{'fixedcosts.status.' + ${row.status}}"></strong>
+      <span class="muted" th:if="${row.hasExpected()}" th:text="#{fixedcosts.expected(${row.expected})}"></span>
+      <span class="muted" th:if="${row.hasNextDue()}" th:text="#{fixedcosts.nextDue(${row.nextDue})}"></span>
+      <span class="muted" th:if="${row.hasEndedOn()}" th:text="#{fixedcosts.endedOn(${row.endedOn})}"></span>
+    </span>
+    <span class="actions">
+      <form method="post" th:if="${row.tickable() and !row.paid()}" th:action="@{/fixed-costs/{id}/tick(id=${row.id})}" class="inline">
+        <button type="submit" class="secondary" th:text="#{fixedcosts.tick}"></button>
+      </form>
+      <form method="post" th:if="${row.paid()}" th:action="@{/fixed-costs/{id}/untick(id=${row.id})}" class="inline">
+        <button type="submit" class="secondary" th:text="#{fixedcosts.untick}"></button>
+      </form>
+      <a th:unless="${row.ended()}" th:href="@{/fixed-costs/{id}/edit(id=${row.id})}" th:text="#{fixedcosts.edit}"></a>
+      <form method="post" th:if="${!row.paused() and !row.ended()}" th:action="@{/fixed-costs/{id}/pause(id=${row.id})}" class="inline">
+        <button type="submit" class="link" th:text="#{fixedcosts.pause}"></button>
+      </form>
+      <form method="post" th:if="${row.paused() or row.ended()}" th:action="@{/fixed-costs/{id}/resume(id=${row.id})}" class="inline">
+        <button type="submit" class="link" th:text="#{fixedcosts.resume}"></button>
+      </form>
+      <form method="post" th:unless="${row.ended()}" th:action="@{/fixed-costs/{id}/end(id=${row.id})}" class="inline">
+        <button type="submit" class="link" th:text="#{fixedcosts.end}"></button>
+      </form>
+    </span>
+  </li>
 
   <th:block th:fragment="transactions(view, showAccount, path)">
     <p th:if="${view.empty and !view.hasPrevious}" th:text="#{transactions.none}"></p>

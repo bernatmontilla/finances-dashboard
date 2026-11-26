@@ -12,6 +12,7 @@
     <nav th:replace="~{fragments :: nav}"></nav>
     <h1 th:text="#{reservations.title}"></h1>
     <p class="muted" th:text="#{reservations.intro}"></p>
+    <p class="muted"><span th:text="#{reservations.hint}"></span> <a th:href="@{/fixed-costs}" th:text="#{reservations.toFixedCosts}"></a></p>
     <p th:replace="~{fragments :: error}"></p>
     <p><a class="button" th:href="@{/reservations/new}" th:text="#{reservations.add}"></a></p>
     <p th:if="${groups.empty}" th:text="#{reservations.none}"></p>

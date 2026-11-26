@@ -113,7 +113,7 @@ class BackupServiceTest {
             assertThat(zip.stream().map(ZipEntry::getName).toList()).containsExactly("manifest.properties", "finances.db");
             String manifest = new String(zip.getInputStream(zip.getEntry("manifest.properties")).readAllBytes(), StandardCharsets.UTF_8);
             assertThat(manifest).contains("format=finances-backup").contains("formatVersion=1").contains("applicationVersion=1.2.3")
-                    .contains("schemaVersion=9").contains("createdAt=2026-06-15T10\\:00\\:00Z").contains("databaseSha256=");
+                    .contains("schemaVersion=10").contains("createdAt=2026-06-15T10\\:00\\:00Z").contains("databaseSha256=");
         }
         assertThat(new String(Files.readAllBytes(file), StandardCharsets.ISO_8859_1)).as("no secret in the file").doesNotContain("not-a-real-key");
         assertNothingStaged(folder);
@@ -759,6 +759,49 @@ class BackupServiceTest {
         assertThat(restored.reservations.open(finances.accounts.Scope.PRIVATE)).singleElement()
                 .satisfies(next -> assertThat(next.followsId()).isEqualTo(yearly.id()));
         assertThat(restored.reservations.open(finances.accounts.Scope.BUSINESS)).hasSize(1);
+    }
+
+    @Test
+    void aBackupWipeRestoreBringsBackFixedCostsAndTheirTicks() throws Exception {
+        Path folder = folder("data");
+        BackupFixtures original = BackupFixtures.open(folder).fill();
+        long account = original.accounts.list(false).stream().filter(a -> a.account().name().equals("Everyday")).findFirst().orElseThrow()
+                .account().id();
+        var rent = original.fixedCosts.create("Example Landlord rent", finances.accounts.Scope.PRIVATE, finances.money.Money.parse("1234.56"),
+                finances.money.Rhythm.MONTHLY, java.time.LocalDate.of(2026, 1, 31), "Example Landlord", "NL10SHOP0000000101", account);
+        original.fixedCosts.create("Example Insurance", finances.accounts.Scope.BUSINESS, finances.money.Money.parse("100.00"),
+                finances.money.Rhythm.QUARTERLY, java.time.LocalDate.of(2026, 3, 15), null, null, null);
+        original.fixedCosts.tick(rent.id()); // the backup clock is in June 2026: a monthly charge falls in it
+        String before = original.fixedCostRows();
+        assertThat(before).contains("Example Landlord rent").contains("2026-06");
+        Path file = backup(folder, temp.resolve("fixed-costs.zip"));
+
+        BackupFixtures.wipe(folder);
+        BackupService service = service(folder);
+        RestorePlan plan = service.stage(file);
+        service.restore(plan.token(), "RESTORE");
+
+        BackupFixtures restored = BackupFixtures.open(folder);
+        assertThat(restored.fixedCostRows()).isEqualTo(before);
+    }
+
+    @Test
+    void aVersionNineBackupRestoresAndMigratesWithNoFixedCosts() throws Exception {
+        Path old = folder("v9");
+        BackupFixtures older = BackupFixtures.openOlder(old, "9");
+        older.accounts.addManual("Everyday", finances.accounts.Scope.PRIVATE, finances.accounts.Kind.CURRENT, "NL51XMPL0000000001");
+        Path file = backup(old, temp.resolve("v9.zip"));
+
+        Path fresh = folder("fresh9");
+        BackupService service = service(fresh);
+        RestorePlan plan = service.stage(file);
+        assertThat(plan.manifest().schemaVersion()).isEqualTo("9");
+        service.restore(plan.token(), "RESTORE");
+
+        BackupFixtures restored = BackupFixtures.open(fresh);
+        assertThat(restored.count("account")).isEqualTo(1);
+        assertThat(restored.count("fixed_cost")).isZero();
+        assertThat(restored.count("fixed_cost_paid")).isZero();
     }
 
     /** Run once to (re)create the stored fixture: {@code ./mvnw test -Dtest=BackupServiceTest -Dfinances.writeBackupFixture=src/test/fixtures/backup/format-N.zip}. */

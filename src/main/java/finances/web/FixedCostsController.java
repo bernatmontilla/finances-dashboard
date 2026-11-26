@@ -167,21 +167,37 @@ class FixedCostsController {
         model.addAttribute("account", account);
         model.addAttribute("scopes", SCOPE_CODES);
         model.addAttribute("rhythms", java.util.Arrays.stream(Rhythm.values()).map(Rhythm::code).toList());
-        model.addAttribute("accountOptions", accountOptions());
+        model.addAttribute("accountOptions", accountOptions(account));
         return "fixed-cost-form";
     }
 
-    /** The accounts in use that a fixed cost can leave from, with their scope so that the owner sees which one fits. */
-    private List<AccountOption> accountOptions() {
+    /**
+     * The accounts in use that a fixed cost can leave from, with their scope so that the owner sees which one fits. An archived
+     * account that is the one selected (still linked, or posted back) is listed too, marked archived, so saving the form keeps the link.
+     */
+    private List<AccountOption> accountOptions(String selected) {
         List<AccountOption> options = new ArrayList<>();
         for (AccountSummary summary : accounts.list(false)) {
             Account account = summary.account();
-            options.add(new AccountOption(Long.toString(account.id()), account.name(), AccountViews.scopeKey(account.scope())));
+            options.add(new AccountOption(Long.toString(account.id()), account.name(), AccountViews.scopeKey(account.scope()), false));
+        }
+        Long selectedId = selectedId(selected);
+        if (selectedId != null && options.stream().noneMatch(option -> option.value().equals(selectedId.toString()))) {
+            accounts.find(selectedId).filter(Account::archived).ifPresent(account -> options
+                    .add(new AccountOption(Long.toString(account.id()), account.name(), AccountViews.scopeKey(account.scope()), true)));
         }
         return options;
     }
 
-    record AccountOption(String value, String name, String scopeKey) {
+    private static Long selectedId(String selected) {
+        try {
+            return selected == null || selected.isBlank() ? null : Long.valueOf(selected.strip());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    record AccountOption(String value, String name, String scopeKey, boolean archived) {
     }
 
     private String accountName(long id) {

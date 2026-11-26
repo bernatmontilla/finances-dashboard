@@ -51,7 +51,7 @@
         <select id="account" name="account">
           <option value="" th:selected="${account == ''}" th:text="#{fixedcost.noAccount}"></option>
           <option th:each="option : ${accountOptions}" th:value="${option.value}" th:selected="${option.value == account}"
-                  th:text="#{fixedcost.accountOption(${option.name}, #{${option.scopeKey}})}"></option>
+                  th:text="${option.archived} ? #{fixedcost.accountOptionArchived(${option.name}, #{${option.scopeKey}})} : #{fixedcost.accountOption(${option.name}, #{${option.scopeKey}})}"></option>
         </select>
         <span class="muted" th:text="#{fixedcost.accountHint}"></span>
       </p>

@@ -243,6 +243,24 @@ class FixedCostsPagesTest {
         assertThat(get("/").body()).contains("href=\"/fixed-costs\"");
     }
 
+    @Test
+    void editingAFixedCostLinkedToAnArchivedAccountKeepsTheLink() throws Exception {
+        long account = accounts.addManual("Everyday", Scope.PRIVATE, Kind.CURRENT, null).id();
+        Map<String, String> create = form("Example Gym", "private", "10.00", "monthly", today().toString());
+        create.put("account", Long.toString(account));
+        assertThat(post("/fixed-costs", create).statusCode()).isEqualTo(302);
+        long id = idOf("Example Gym");
+        accounts.archive(account);
+
+        String edit = get("/fixed-costs/" + id + "/edit").body();
+        assertThat(edit).contains("Everyday (Private, archived)").containsPattern("value=\"" + account + "\"\\s+selected");
+
+        Map<String, String> unchanged = form("Example Gym", "private", "12.00", "monthly", today().toString());
+        unchanged.put("account", Long.toString(account));
+        assertThat(post("/fixed-costs/" + id, unchanged).statusCode()).isEqualTo(302);
+        assertThat(jdbc.sql("select account_id from fixed_cost where id = ?").param(id).query(Long.class).single()).isEqualTo(account);
+    }
+
     // ----- refusals
 
     @Test

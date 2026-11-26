@@ -46,6 +46,11 @@ final class FixedCostViews {
             return expected == null ? null : expected.substring(0, 7);
         }
 
+        /** A charge did not arrive: the flag has its own mark paid, skip and end, so the row does not offer a second skip. */
+        public boolean hasMissing() {
+            return flags.stream().anyMatch(FlagRow::missing);
+        }
+
         public boolean stillToCome() {
             return status.equals("still_to_come");
         }

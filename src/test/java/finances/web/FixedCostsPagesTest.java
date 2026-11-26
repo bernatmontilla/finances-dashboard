@@ -425,7 +425,7 @@ class FixedCostsPagesTest {
         deliverEnergy(account, today(), -999, "REF-OTHER");
 
         String page = get("/fixed-costs").body();
-        assertThat(page).contains("No payment arrived for the charge expected").contains("Mark as paid").contains("Skip this period")
+        assertThat(page).contains("No payment arrived for the charge expected").containsPattern("Mark \\d{4}-\\d{2} as paid").containsPattern("Skip \\d{4}-\\d{2}")
                 .contains("End this fixed cost");
         assertThat(get("/").body()).contains("Fixed costs: 1 needs a look");
         Matcher month = Pattern.compile("name=\"month\" value=\"(\\d{4}-\\d{2})\"").matcher(page);

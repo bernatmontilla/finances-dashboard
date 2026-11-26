@@ -389,6 +389,9 @@ public class FixedCostService {
      */
     @Transactional
     public int matchPayments() {
+        // The first statement is a write that changes nothing, so the single SQLite writer is taken (and waited for) up front instead of
+        // upgrading a read lock halfway, which fails at once when another writer committed in between (as TransactionService.store).
+        jdbc.sql("update fixed_cost_match set matched_at = matched_at where 0").update();
         LocalDate today = accounts.today();
         YearMonth current = YearMonth.from(today);
         Set<String> linked = new HashSet<>(jdbc.sql("select fixed_cost_id || ' ' || month from fixed_cost_match").query(String.class).list());

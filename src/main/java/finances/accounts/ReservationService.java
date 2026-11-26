@@ -88,6 +88,10 @@ public class ReservationService {
                 continue;
             }
             Transaction payment = transactions.get(reservation.transactionId());
+            if (payment.amount().cents() >= 0) { // the bank later turned the row into money received: it no longer is a payment
+                result.add(new ClosedReservation(reservation, null, null, null));
+                continue;
+            }
             Money paid = payment.amount().negate();
             result.add(new ClosedReservation(reservation, payment, paid, paid.minus(reservation.amount())));
         }
@@ -113,7 +117,7 @@ public class ReservationService {
             (close ? likely : others).add(new PaymentCandidate(transaction, close));
         }
         likely.sort(Comparator
-                .comparingLong((PaymentCandidate c) -> Math.abs(c.transaction().amount().negate().cents() - reservation.amount().cents()))
+                .comparingLong((PaymentCandidate c) -> amountGap(reservation, c.transaction()))
                 .thenComparingLong(c -> Math.abs(ChronoUnit.DAYS.between(c.transaction().bookingDate(), reservation.dueDate())))
                 .thenComparingLong(c -> c.transaction().id()));
         List<PaymentCandidate> all = new ArrayList<>(likely);
@@ -121,9 +125,19 @@ public class ReservationService {
         return all;
     }
 
+    /** How far a payment is from the reserved amount in cents; the largest value when that does not fit (it is then never close). */
+    private static long amountGap(Reservation reservation, Transaction transaction) {
+        try {
+            return Math.abs(Math.subtractExact(transaction.amount().negate().cents(), reservation.amount().cents()));
+        } catch (ArithmeticException e) {
+            return Long.MAX_VALUE;
+        }
+    }
+
     private static boolean isLikely(Reservation reservation, Transaction transaction) {
-        long difference = Math.abs(transaction.amount().negate().cents() - reservation.amount().cents());
-        boolean amountClose = Math.multiplyExact(LIKELY_AMOUNT_DIVISOR, difference) <= reservation.amount().cents();
+        long gap = amountGap(reservation, transaction);
+        // 10 * gap <= amount, in whole cents: the same as gap <= amount / 10 rounded down
+        boolean amountClose = gap <= reservation.amount().cents() / LIKELY_AMOUNT_DIVISOR;
         boolean dateClose = Math.abs(ChronoUnit.DAYS.between(transaction.bookingDate(), reservation.dueDate())) <= LIKELY_DAYS;
         return amountClose && dateClose;
     }

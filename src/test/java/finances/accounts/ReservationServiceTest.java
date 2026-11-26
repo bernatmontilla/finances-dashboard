@@ -636,6 +636,30 @@ class ReservationServiceTest {
         assertThat(reservations.closedWithPayments(Scope.PRIVATE).getFirst().difference()).isEqualTo(eur("-200.00"));
     }
 
+    @Test
+    void aLinkedRowTheBankLaterTurnedIntoMoneyReceivedShowsNoDifference() {
+        Reservation premium = premium();
+        long payment = spend(everyday(), JAN_1, 120000, "REF-1");
+        reservations.close(premium.id(), payment);
+        jdbc.sql("update transactions set amount_cents = 120000 where id = ?").param(payment).update();
+
+        ClosedReservation closed = reservations.closedWithPayments(Scope.PRIVATE).getFirst();
+
+        assertThat(closed.hasPayment()).isFalse();
+        assertThat(closed.difference()).isNull();
+    }
+
+    @Test
+    void anAmountTooLargeToCompareIsNeverLikelyAndDoesNotBreakThePicker() {
+        Reservation rent = rentSeen(0);
+        long huge = spend(everyday(), DUE, Long.MAX_VALUE / 2, "REF-1");
+
+        assertThat(reservations.paymentCandidates(rent.id())).singleElement().satisfies(c -> {
+            assertThat(c.transaction().id()).isEqualTo(huge);
+            assertThat(c.likely()).isFalse();
+        });
+    }
+
     // ----- the summary
 
     @Test

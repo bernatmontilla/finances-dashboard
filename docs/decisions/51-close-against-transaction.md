@@ -26,10 +26,14 @@ ones come first (closest amount, then closest date, then lowest id), the rest ne
 without a payment, exactly as before; the picker is a separate page with plain radio buttons and no script. A blank `transaction` on the POST
 closes without one.
 
+Known limit: the window ends today and the list holds the 100 newest rows, so for a reservation that fell due months ago a payment
+near the due date may not be offered; closing without a payment still works. Widening it (a search) is issue #59.
+
 ## The difference
 
 `paid - reserved`, worked out in `ReservationService.closedWithPayments` (`ClosedReservation`); the view only formats it and picks the text
-(more, less, exactly). Nothing else uses it and nothing is adjusted.
+(more, less, exactly). Nothing else uses it and nothing is adjusted. The link reads the row as it is now: a bank may later change a
+booked row's amount, and if that turns it into money received, the page shows no payment and no difference for it.
 
 ## Reopening, removing, setting reserved so far
 

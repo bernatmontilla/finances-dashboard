@@ -46,6 +46,13 @@ writer), nothing is cached and nothing is logged.
 Nothing a sync, an import or `matchPayments()` runs deletes `fixed_cost_paid`, `fixed_cost_unpaid`, `fixed_cost_skipped` or
 `fixed_cost_price_kept`.
 
+## Left as the spec says
+
+- **Keep** only accepts the charge at its price: it clears the flag and does not mark the month paid (the charge is beyond the tolerance, so it
+  is not a match). The owner ticks the month, or takes the price over instead, which links it.
+- The overview line counts the flags of both scopes in one line, as the spec says ("one line"); the fixed costs page shows them per fixed cost.
+- Flags are recomputed per page read (a few small queries per fixed cost); caching is left until the number of fixed costs makes it matter.
+
 ## Known limit
 
 Two running fixed costs with the same counterparty (say 20.00 and 50.00 at one insurer): when the owner skips or unticks one of them its

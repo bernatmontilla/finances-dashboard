@@ -103,10 +103,10 @@ final class FixedCostViews {
 
     /**
      * One flag of a fixed cost (issue #22): {@code kind} is {@code price_change} or {@code missing}; {@code month} is the occurrence's
-     * month and {@code expected} its date; {@code transaction} and {@code charged} (the amount of the latest charge) are null for a
-     * missing charge.
+     * month and {@code expected} its date; {@code transaction} and {@code charged} (the amount of the latest charge) and {@code booked}
+     * (its booking date) are null for a missing charge.
      */
-    record FlagRow(String kind, String month, String expected, String transaction, String charged) {
+    record FlagRow(String kind, String month, String expected, String transaction, String charged, String booked) {
 
         public boolean priceChange() {
             return kind.equals("price_change");
@@ -165,7 +165,8 @@ final class FixedCostViews {
 
     private static FlagRow flagRow(FixedCostFlag flag) {
         return new FlagRow(flag.kind().name().toLowerCase(Locale.ROOT), flag.month().toString(), flag.expected().toString(),
-                flag.transactionId().map(Object::toString).orElse(null), flag.charged().map(finances.money.Money::format).orElse(null));
+                flag.transactionId().map(Object::toString).orElse(null), flag.charged().map(finances.money.Money::format).orElse(null),
+                flag.booked().map(Object::toString).orElse(null));
     }
 
     /**

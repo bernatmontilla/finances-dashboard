@@ -377,12 +377,12 @@ class FixedCostsPagesTest {
         deliverEnergy(account, today(), -15000, "REF-1");
 
         String page = get("/fixed-costs").body();
-        assertThat(page).contains("The latest charge was €150.00, not €100.00").contains("Take over €150.00").contains("Keep €100.00");
+        assertThat(page).contains("The latest charge, booked " + today() + ", was €150.00, not €100.00").contains("Take over €150.00").contains("Keep €100.00");
         assertThat(get("/").body()).contains("Fixed costs: 1 needs a look").contains("id=\"fixed-cost-flags\"");
 
         long transaction = jdbc.sql("select id from transactions where reference = 'REF-1'").query(Long.class).single();
         assertThat(post("/fixed-costs/" + id + "/keep-amount", Map.of("transaction", Long.toString(transaction))).statusCode()).isEqualTo(302);
-        assertThat(get("/fixed-costs").body()).doesNotContain("The latest charge was");
+        assertThat(get("/fixed-costs").body()).doesNotContain("The latest charge, booked");
         assertThat(get("/").body()).doesNotContain("need a look").doesNotContain("needs a look");
         assertThat(jdbc.sql("select amount_cents from fixed_cost where id = ?").param(id).query(Long.class).single()).isEqualTo(10000);
 
@@ -391,7 +391,7 @@ class FixedCostsPagesTest {
         assertThat(get("/fixed-costs").body()).contains("Take over €150.00");
         assertThat(post("/fixed-costs/" + id + "/take-over-amount", Map.of("transaction", Long.toString(second))).statusCode()).isEqualTo(302);
         assertThat(jdbc.sql("select amount_cents from fixed_cost where id = ?").param(id).query(Long.class).single()).isEqualTo(15000);
-        assertThat(get("/fixed-costs").body()).doesNotContain("The latest charge was").contains("Paid this month");
+        assertThat(get("/fixed-costs").body()).doesNotContain("The latest charge, booked").contains("Paid this month");
     }
 
     @Test

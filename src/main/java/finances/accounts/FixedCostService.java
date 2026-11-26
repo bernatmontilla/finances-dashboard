@@ -623,7 +623,7 @@ public class FixedCostService {
             return Optional.empty();
         }
         return Optional.of(new FixedCostFlag(FixedCostFlag.Kind.PRICE_CHANGE, cost, latestMonth, latestExpected,
-                Optional.of(latest.id()), Optional.of(Money.eur(-latest.cents()))));
+                Optional.of(latest.id()), Optional.of(Money.eur(-latest.cents())), Optional.of(latest.bookingDate())));
     }
 
     private static boolean isLater(Charge a, Charge b) {
@@ -655,7 +655,8 @@ public class FixedCostService {
                     || !windowCharges(cost, expected.get()).isEmpty() || !deliveredSince(cost, context, expected.get().plusDays(MATCH_DAYS))) {
                 return Optional.empty();
             }
-            return Optional.of(new FixedCostFlag(FixedCostFlag.Kind.MISSING, cost, month, expected.get(), Optional.empty(), Optional.empty()));
+            return Optional.of(new FixedCostFlag(FixedCostFlag.Kind.MISSING, cost, month, expected.get(), Optional.empty(), Optional.empty(),
+                    Optional.empty()));
         }
         return Optional.empty();
     }

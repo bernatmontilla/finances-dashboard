@@ -950,6 +950,15 @@ class FixedCostServiceTest {
     }
 
     @Test
+    void thePriceChangeFlagCarriesTheBookingDateOfTheCharge() {
+        Account account = everyday();
+        FixedCost cost = gym();
+        paidGym(account, -1101, "REF-1");
+
+        assertThat(fixedCosts.flags(cost.id())).singleElement().satisfies(flag -> assertThat(flag.booked()).contains(date("2026-06-15")));
+    }
+
+    @Test
     void takeOverAndKeepAreRefusedUnlessTheTransactionIsTheCurrentFlag() {
         Account account = everyday();
         FixedCost cost = gym();

@@ -122,7 +122,7 @@
       <span class="muted nowrap" th:if="${row.hasEndedOn()}" th:text="#{fixedcosts.endedOn(${row.endedOn})}"></span>
     </span>
     <div class="notice fixed-cost-flag" th:each="flag : ${row.flags}">
-      <p th:if="${flag.priceChange()}" th:text="#{fixedcosts.flag.priceChange(${flag.charged}, ${row.amount})}"></p>
+      <p th:if="${flag.priceChange()}" th:text="#{fixedcosts.flag.priceChange(${flag.charged}, ${row.amount}, ${flag.booked})}"></p>
       <p th:if="${flag.missing()}" th:text="#{fixedcosts.flag.missing(${flag.expected})}"></p>
       <div class="actions">
         <form method="post" th:if="${flag.priceChange()}" th:action="@{/fixed-costs/{id}/take-over-amount(id=${row.id})}" class="inline">

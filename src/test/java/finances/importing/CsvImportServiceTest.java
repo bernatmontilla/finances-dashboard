@@ -12,6 +12,7 @@ import finances.accounts.AccountException;
 import finances.accounts.AccountService;
 import finances.accounts.BalanceEntry;
 import finances.accounts.FixedCostMonth;
+import finances.accounts.FixedCostProposalService;
 import finances.accounts.FixedCostService;
 import finances.accounts.Kind;
 import finances.accounts.Scope;
@@ -59,7 +60,8 @@ class CsvImportServiceTest {
         accounts = new AccountService(jdbc, CLOCK);
         transactions = new TransactionService(jdbc, CLOCK, new DataSourceTransactionManager(dataSource));
         fixedCosts = new FixedCostService(jdbc, CLOCK, accounts, transactions);
-        importing = new CsvImportService(accounts, transactions, fixedCosts, jdbc, CLOCK);
+        importing = new CsvImportService(accounts, transactions, fixedCosts,
+                new FixedCostProposalService(jdbc, CLOCK, accounts, new DataSourceTransactionManager(dataSource)), jdbc, CLOCK);
         csv = accounts.addCsv("Imported current", Scope.PRIVATE, Kind.CURRENT, "NL51XMPL0000000001");
     }
 
@@ -163,6 +165,33 @@ class CsvImportServiceTest {
 
         assertThat(importDetectedConfirmed(bytes).added()).isZero();
         assertThat(jdbc.sql("select count(*) from fixed_cost_match").query(Integer.class).single()).isEqualTo(1);
+    }
+
+    // ----- fixed cost proposals after an import (issue #71)
+
+    @Test
+    void anImportOfRepeatingChargesProposesAFixedCostAndTheSameFileAgainStoresTheSameProposal() {
+        byte[] bytes = text("date,amount,name,iban,description\n2026-04-14,-20.00,Example Telecom,NL80SHOP0000000102,April\n"
+                + "2026-05-14,-20.00,Example Telecom,NL80SHOP0000000102,May\n2026-06-14,-20.00,Example Telecom,NL80SHOP0000000102,June\n");
+
+        assertThat(importDetected(bytes).added()).isEqualTo(3);
+
+        assertThat(jdbc.sql("select count(*) from fixed_cost_proposal").query(Integer.class).single()).isEqualTo(1);
+        assertThat(jdbc.sql("select count(*) from fixed_cost_proposal_charge").query(Integer.class).single()).isEqualTo(3);
+        assertThat(jdbc.sql("select count(*) from fixed_cost").query(Integer.class).single()).as("nothing is added by itself").isZero();
+        long id = jdbc.sql("select id from fixed_cost_proposal").query(Long.class).single();
+
+        assertThat(importDetectedConfirmed(bytes).added()).isZero();
+        assertThat(jdbc.sql("select id from fixed_cost_proposal").query(Long.class).single()).isEqualTo(id);
+    }
+
+    @Test
+    void aFailureWhileLookingForProposalsDoesNotFailTheImport() {
+        jdbc.sql("drop table fixed_cost_proposal_charge").update();
+        jdbc.sql("drop table fixed_cost_proposal").update();
+        byte[] bytes = text("date,amount,name,iban,description\n2026-06-14,-100.00,Example Energy,NL10SHOP0000000101,Energy June\n");
+
+        assertThat(importDetected(bytes).added()).isEqualTo(1);
     }
 
     // ----- shape 3: tab, a balance column, thousands separators

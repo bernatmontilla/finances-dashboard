@@ -103,10 +103,10 @@ final class FixedCostViews {
 
     /**
      * One flag of a fixed cost (issue #22): {@code kind} is {@code price_change} or {@code missing}; {@code month} is the occurrence's
-     * month and {@code expected} its date; {@code transaction} and {@code charged} (the amount of the latest charge) are null for a
-     * missing charge.
+     * month and {@code expected} its date; {@code transaction} and {@code charged} (the amount of the latest charge) and {@code booked}
+     * (its booking date) are null for a missing charge.
      */
-    record FlagRow(String kind, String month, String expected, String transaction, String charged) {
+    record FlagRow(String kind, String month, String expected, String transaction, String charged, String booked) {
 
         public boolean priceChange() {
             return kind.equals("price_change");
@@ -115,6 +115,26 @@ final class FixedCostViews {
         public boolean missing() {
             return kind.equals("missing");
         }
+    }
+
+    /**
+     * A proposal (issue #71): what repeating transactions suggest. {@code latestBooked} is the booking date of its latest charge, its
+     * age (hard rule 9); {@code scopeKey} is the message key of its scope.
+     */
+    record ProposalRow(long id, String name, String amount, String rhythmKey, String scopeKey, int charges, String latestBooked) {
+    }
+
+    /** A rejected proposal, kept until the owner undoes it. */
+    record RejectionRow(long id, String name, String amount, String scopeKey) {
+    }
+
+    static ProposalRow proposalRow(finances.accounts.FixedCostProposal proposal) {
+        return new ProposalRow(proposal.id(), proposal.name(), proposal.amount().format(), "rhythm." + proposal.rhythm().code(),
+                "scope." + proposal.scope().code(), proposal.charges(), proposal.latestBooked().toString());
+    }
+
+    static RejectionRow rejectionRow(finances.accounts.FixedCostRejection rejection) {
+        return new RejectionRow(rejection.id(), rejection.name(), rejection.amount().format(), "scope." + rejection.scope().code());
     }
 
     /** The fixed costs of one scope: totals, then the running ones, the paused ones and the ended ones. */
@@ -165,7 +185,8 @@ final class FixedCostViews {
 
     private static FlagRow flagRow(FixedCostFlag flag) {
         return new FlagRow(flag.kind().name().toLowerCase(Locale.ROOT), flag.month().toString(), flag.expected().toString(),
-                flag.transactionId().map(Object::toString).orElse(null), flag.charged().map(finances.money.Money::format).orElse(null));
+                flag.transactionId().map(Object::toString).orElse(null), flag.charged().map(finances.money.Money::format).orElse(null),
+                flag.booked().map(Object::toString).orElse(null));
     }
 
     /**

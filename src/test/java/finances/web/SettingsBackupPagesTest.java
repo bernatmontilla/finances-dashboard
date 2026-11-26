@@ -155,7 +155,7 @@ class SettingsBackupPagesTest {
         assertThat(get("/accounts").body()).contains("Added after the backup");
 
         String confirm = get(confirmPath).body();
-        assertThat(confirm).contains("Restore from a backup").contains("Backup format 1, database version 12")
+        assertThat(confirm).contains("Restore from a backup").contains("Backup format 1, database version 13")
                 .contains("The backup holds: accounts 1, balances 0, transactions 3,000")
                 .contains("The application now holds: accounts 2, balances 0, transactions 3,000").contains("Type RESTORE to confirm");
         assertThat(confirm).doesNotContain("Corner Grocery").doesNotContain("NL51XMPL");

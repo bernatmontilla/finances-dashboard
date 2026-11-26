@@ -136,6 +136,25 @@ class BankSyncTest {
                 .noneMatch(m -> m.contains("Example") || m.contains("NL80") || m.contains("100"));
     }
 
+    @Test
+    void aRunLooksForProposalsAndAFailureThereDoesNotFailTheSyncAndLogsOnlyTheClass() {
+        linkBothAsNewAccounts();
+        h.jdbc.sql("drop table fixed_cost_proposal_charge").update();
+        h.jdbc.sql("drop table fixed_cost_proposal").update();
+        ListAppender<ILoggingEvent> logs = new ListAppender<>();
+        logs.start();
+        Logger logger = (Logger) LoggerFactory.getLogger(BankSyncService.class);
+        logger.addAppender(logs);
+        try {
+            nextDay();
+            assertThat(h.sync.syncAll(SyncTrigger.SCHEDULED, Map.of())).isEqualTo(new SyncSummary(SyncSummary.State.DONE, 2, 0));
+        } finally {
+            logger.detachAppender(logs);
+        }
+        assertThat(logs.list).extracting(ILoggingEvent::getFormattedMessage).anyMatch(m -> m.startsWith("Proposing fixed costs failed: "))
+                .noneMatch(m -> m.contains("Example") || m.contains("NL80") || m.contains("100"));
+    }
+
     // ----- link
 
     @Test

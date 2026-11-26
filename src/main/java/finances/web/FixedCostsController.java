@@ -7,6 +7,8 @@ import finances.accounts.AccountSummary;
 import finances.accounts.FixedCost;
 import finances.accounts.FixedCostException;
 import finances.accounts.FixedCostFlag;
+import finances.accounts.FixedCostProposal;
+import finances.accounts.FixedCostProposalService;
 import finances.accounts.FixedCostService;
 import finances.accounts.FixedCostSummary;
 import finances.accounts.Scope;
@@ -23,6 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Controller;
@@ -46,9 +49,12 @@ class FixedCostsController {
     private final FixedCostService fixedCosts;
     private final AccountService accounts;
     private final FreshnessService freshness;
+    private final FixedCostProposalService proposals;
 
-    FixedCostsController(FixedCostService fixedCosts, AccountService accounts, FreshnessService freshness) {
+    FixedCostsController(FixedCostService fixedCosts, FixedCostProposalService proposals, AccountService accounts,
+            FreshnessService freshness) {
         this.fixedCosts = fixedCosts;
+        this.proposals = proposals;
         this.accounts = accounts;
         this.freshness = freshness;
     }
@@ -73,13 +79,27 @@ class FixedCostsController {
             }
         }
         model.addAttribute("groups", groups);
+        model.addAttribute("proposals", proposals.proposals().stream().map(FixedCostViews::proposalRow).toList());
+        model.addAttribute("rejections", proposals.rejections().stream().map(FixedCostViews::rejectionRow).toList());
         return "fixed-costs";
     }
 
     // ----- one fixed cost: add, edit
 
+    /** The empty form, or with {@code proposal} the form filled in from an open proposal (issue #71); posting it is the ordinary create. */
     @GetMapping("/fixed-costs/new")
-    String newForm(Model model) {
+    String newForm(@RequestParam(required = false) Long proposal, Model model, HttpServletResponse response) {
+        if (proposal != null) {
+            Optional<FixedCostProposal> open = proposals.open(proposal);
+            if (open.isPresent()) {
+                FixedCostProposal p = open.get();
+                return form(model, null, p.name(), p.scope().code(), AccountsController.plainAmount(p.amount()), p.rhythm().code(),
+                        p.firstDue().toString(), p.counterpartyName() == null ? "" : p.counterpartyName(),
+                        p.counterpartyIban() == null ? "" : p.counterpartyIban(), "");
+            }
+            return refused(response, model, new FixedCostException(FixedCostException.Reason.PROPOSAL_NOT_OPEN),
+                    form(model, null, "", "private", "", Rhythm.MONTHLY.code(), "", "", "", ""));
+        }
         return form(model, null, "", "private", "", Rhythm.MONTHLY.code(), "", "", "", "");
     }
 
@@ -183,6 +203,29 @@ class FixedCostsController {
     String keepAmount(@PathVariable long id, @RequestParam(defaultValue = "") String transaction, Model model,
             HttpServletResponse response) {
         return act(id, model, response, () -> fixedCosts.keepAmount(id, parseTransaction(transaction)));
+    }
+
+    // ----- proposals (issue #71)
+
+    /** "Not a fixed cost": the proposal is hidden until the owner undoes it, or its amount changes beyond the matching tolerance. */
+    @PostMapping("/fixed-costs/proposals/{id}/reject")
+    String rejectProposal(@PathVariable long id, Model model, HttpServletResponse response) {
+        try {
+            proposals.reject(id);
+            return "redirect:/fixed-costs";
+        } catch (FixedCostException e) {
+            return refused(response, model, e, listPage(model));
+        }
+    }
+
+    @PostMapping("/fixed-costs/rejections/{id}/undo")
+    String undoRejection(@PathVariable long id, Model model, HttpServletResponse response) {
+        try {
+            proposals.undoRejection(id);
+            return "redirect:/fixed-costs";
+        } catch (FixedCostException e) {
+            return refused(response, model, e, listPage(model));
+        }
     }
 
     // ----- pages and helpers

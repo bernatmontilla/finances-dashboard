@@ -3,6 +3,7 @@ package finances.web;
 import finances.accounts.AccountService;
 import finances.accounts.AccountSummary;
 import finances.accounts.BankBalanceInfo;
+import finances.accounts.FixedCostProposalService;
 import finances.accounts.FixedCostService;
 import finances.accounts.ReservationService;
 import finances.accounts.Scope;
@@ -38,9 +39,11 @@ class OverviewController {
     private final HeadlineService headlines;
     private final ReservationService reservations;
     private final FixedCostService fixedCosts;
+    private final FixedCostProposalService proposals;
 
     OverviewController(BuildProperties build, AccountService accounts, BankStatus bank, FreshnessService freshness,
-            HeadlineService headlines, ReservationService reservations, FixedCostService fixedCosts) {
+            HeadlineService headlines, ReservationService reservations, FixedCostService fixedCosts,
+            FixedCostProposalService proposals) {
         this.build = build;
         this.accounts = accounts;
         this.bank = bank;
@@ -48,6 +51,7 @@ class OverviewController {
         this.headlines = headlines;
         this.reservations = reservations;
         this.fixedCosts = fixedCosts;
+        this.proposals = proposals;
     }
 
     /** An account whose figure may be out of date, as the line at the top links to it. */
@@ -83,7 +87,8 @@ class OverviewController {
         // A fixed cost may rest on an account archived since: its figures keep the stale mark (hard rule 9), though the line at the top
         // below counts accounts in use only.
         model.addAttribute("fixedCostsComing", fixedCostsComing(FixedCostViews.staleOfAll(accounts, freshness)));
-        model.addAttribute("fixedCostFlags", fixedCosts.flags().size());
+        // The line counts what needs a look: the flags and the open proposals (issue #71).
+        model.addAttribute("fixedCostFlags", fixedCosts.flags().size() + proposals.proposals().size());
         model.addAttribute("groups", AccountViews.groups(active, accounts.today(), Map.of(), accounts.zone(), banks, stale));
         model.addAttribute("attention", active.stream().filter(s -> stale.containsKey(s.account().id()))
                 .map(s -> new AttentionRow(s.account().id(), s.account().name())).toList());

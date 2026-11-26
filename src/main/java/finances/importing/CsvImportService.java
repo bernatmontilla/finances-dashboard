@@ -5,6 +5,7 @@ import finances.accounts.AccountException;
 import finances.accounts.AccountService;
 import finances.accounts.DeliveredTransaction;
 import finances.accounts.DeliveryReport;
+import finances.accounts.FixedCostProposalService;
 import finances.accounts.FixedCostService;
 import finances.accounts.ImportedBalance;
 import finances.accounts.Kind;
@@ -39,14 +40,16 @@ public class CsvImportService {
     private final AccountService accounts;
     private final TransactionService transactions;
     private final FixedCostService fixedCosts;
+    private final FixedCostProposalService proposals;
     private final JdbcClient jdbc;
     private final Clock clock;
 
-    public CsvImportService(AccountService accounts, TransactionService transactions, FixedCostService fixedCosts, JdbcClient jdbc,
-            Clock clock) {
+    public CsvImportService(AccountService accounts, TransactionService transactions, FixedCostService fixedCosts,
+            FixedCostProposalService proposals, JdbcClient jdbc, Clock clock) {
         this.accounts = accounts;
         this.transactions = transactions;
         this.fixedCosts = fixedCosts;
+        this.proposals = proposals;
         this.jdbc = jdbc;
         this.clock = clock;
     }
@@ -241,6 +244,11 @@ public class CsvImportService {
             fixedCosts.matchPayments();
         } catch (RuntimeException e) {
             LOG.warn("Matching fixed costs failed: {}", e.getClass().getSimpleName());
+        }
+        try {
+            proposals.detect();
+        } catch (RuntimeException e) {
+            LOG.warn("Proposing fixed costs failed: {}", e.getClass().getSimpleName());
         }
     }
 }

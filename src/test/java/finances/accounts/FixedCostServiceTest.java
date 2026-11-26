@@ -932,6 +932,33 @@ class FixedCostServiceTest {
     }
 
     @Test
+    void aBankCorrectionOfAKeptChargeBeyondTheToleranceRaisesThePriceChangeAgain() {
+        Account account = everyday();
+        FixedCost cost = gym();
+        long charge = paidGym(account, -1101, "REF-1");
+        fixedCosts.keepAmount(cost.id(), charge);
+        assertThat(fixedCosts.flags()).isEmpty();
+
+        paidGym(account, -1101, "REF-1");
+        assertThat(fixedCosts.flags()).as("the same amount stays kept").isEmpty();
+
+        paidGym(account, -1500, "REF-1");
+        assertThat(fixedCosts.flags()).singleElement().satisfies(flag -> {
+            assertThat(flag.isPriceChange()).isTrue();
+            assertThat(flag.charged()).contains(eur("15.00"));
+        });
+    }
+
+    @Test
+    void thePriceChangeFlagCarriesTheBookingDateOfTheCharge() {
+        Account account = everyday();
+        FixedCost cost = gym();
+        paidGym(account, -1101, "REF-1");
+
+        assertThat(fixedCosts.flags(cost.id())).singleElement().satisfies(flag -> assertThat(flag.booked()).contains(date("2026-06-15")));
+    }
+
+    @Test
     void takeOverAndKeepAreRefusedUnlessTheTransactionIsTheCurrentFlag() {
         Account account = everyday();
         FixedCost cost = gym();
@@ -994,6 +1021,18 @@ class FixedCostServiceTest {
             assertThat(flag.month()).isEqualTo(java.time.YearMonth.of(2026, 6));
             assertThat(flag.expected()).isEqualTo(date("2026-06-01"));
         });
+    }
+
+    @Test
+    void anImportOfOldTransactionsAfterTheWindowRaisesNoMissingFlagButALaterBookedOneDoes() {
+        Account account = everyday();
+        dueOnTheFirst();
+        clock.set(date("2026-06-12"));
+        pay(account, "2026-06-05", -500, TransactionStatus.BOOKED, "Corner Grocery", null, "OLD-1");
+        assertThat(fixedCosts.flags()).as("delivered after the window, but booked before it closed").isEmpty();
+
+        pay(account, "2026-06-09", -500, TransactionStatus.BOOKED, "Corner Grocery", null, "NEW-1");
+        assertThat(fixedCosts.flags()).singleElement().satisfies(flag -> assertThat(flag.isMissing()).isTrue());
     }
 
     @Test

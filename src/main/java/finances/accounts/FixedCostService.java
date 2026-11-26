@@ -464,7 +464,7 @@ public class FixedCostService {
     }
 
     /** A transaction's IBAN as the stored fixed cost IBAN is written: no white space, upper case. Not validated: the bank's text is used. */
-    private static String compactIban(String iban) {
+    static String compactIban(String iban) {
         return iban == null ? null : iban.replaceAll("\\s+", "").toUpperCase(java.util.Locale.ROOT);
     }
 
@@ -519,8 +519,9 @@ public class FixedCostService {
     // ----- flags and the owner's answers to them (issue #22)
 
     /** What a flag is worked out from, read once per call: the facts of the occurrences around today. */
-    private record Context(LocalDate today, ZoneId zone, Map<Long, Instant> delivered, Map<Scope, List<Long>> inUse, Set<String> ticked,
-            Set<String> unticked, Set<String> skipped, Map<String, Long> links, Set<String> kept) {
+    private record Context(LocalDate today, ZoneId zone, Map<Long, Instant> delivered, Map<Long, LocalDate> newestBooked,
+            Map<Scope, List<Long>> inUse, Set<String> ticked, Set<String> unticked, Set<String> skipped, Map<String, Long> links,
+            Set<String> kept) {
     }
 
     private Context context() {
@@ -533,9 +534,13 @@ public class FixedCostService {
         Map<String, Long> links = new HashMap<>();
         jdbc.sql("select fixed_cost_id || ' ' || month, transaction_id from fixed_cost_match where month >= ?").param(from)
                 .query((rs, row) -> links.put(rs.getString(1), rs.getLong(2))).list();
-        Set<String> kept = new HashSet<>(jdbc.sql("select fixed_cost_id || ' ' || transaction_id from fixed_cost_price_kept")
+        Set<String> kept = new HashSet<>(jdbc.sql("select fixed_cost_id || ' ' || transaction_id || ' ' || amount_cents from fixed_cost_price_kept "
+                + "where amount_cents is not null")
                 .query(String.class).list());
-        return new Context(today, accounts.zone(), transactions.lastDelivered(), inUse, keysFrom("fixed_cost_paid", from),
+        Map<Long, LocalDate> newestBooked = new HashMap<>();
+        jdbc.sql("select account_id, max(booking_date) from transactions where status = 'booked' group by account_id")
+                .query((rs, row) -> newestBooked.put(rs.getLong(1), LocalDate.parse(rs.getString(2)))).list();
+        return new Context(today, accounts.zone(), transactions.lastDelivered(), newestBooked, inUse, keysFrom("fixed_cost_paid", from),
                 keysFrom("fixed_cost_unpaid", from), keysFrom("fixed_cost_skipped", from), links, kept);
     }
 
@@ -610,7 +615,7 @@ public class FixedCostService {
             }
         }
         if (latest == null || latest.cents() >= 0 || latest.cents() == Long.MIN_VALUE
-                || context.kept().contains(cost.id() + " " + latest.id())) {
+                || context.kept().contains(cost.id() + " " + latest.id() + " " + -latest.cents())) {
             return Optional.empty();
         }
         long gap = ReservationService.amountGap(-latest.cents(), cost.amount().cents());
@@ -618,7 +623,7 @@ public class FixedCostService {
             return Optional.empty();
         }
         return Optional.of(new FixedCostFlag(FixedCostFlag.Kind.PRICE_CHANGE, cost, latestMonth, latestExpected,
-                Optional.of(latest.id()), Optional.of(Money.eur(-latest.cents()))));
+                Optional.of(latest.id()), Optional.of(Money.eur(-latest.cents())), Optional.of(latest.bookingDate())));
     }
 
     private static boolean isLater(Charge a, Charge b) {
@@ -650,12 +655,16 @@ public class FixedCostService {
                     || !windowCharges(cost, expected.get()).isEmpty() || !deliveredSince(cost, context, expected.get().plusDays(MATCH_DAYS))) {
                 return Optional.empty();
             }
-            return Optional.of(new FixedCostFlag(FixedCostFlag.Kind.MISSING, cost, month, expected.get(), Optional.empty(), Optional.empty()));
+            return Optional.of(new FixedCostFlag(FixedCostFlag.Kind.MISSING, cost, month, expected.get(), Optional.empty(), Optional.empty(),
+                    Optional.empty()));
         }
         return Optional.empty();
     }
 
-    /** True when every account the fixed cost rests on had a delivery on a day after {@code day}; false when there are none. */
+    /**
+     * True when every account the fixed cost rests on had a delivery on a day after {@code day} and has a booked transaction dated
+     * after {@code day}: a late import of old transactions says nothing about the days since (issue #71). False when there are none.
+     */
     private static boolean deliveredSince(FixedCost cost, Context context, LocalDate day) {
         List<Long> involved = cost.accountId() != null ? List.of(cost.accountId()) : context.inUse().getOrDefault(cost.scope(), List.of());
         if (involved.isEmpty()) {
@@ -663,7 +672,8 @@ public class FixedCostService {
         }
         for (long accountId : involved) {
             Instant at = context.delivered().get(accountId);
-            if (at == null || !at.atZone(context.zone()).toLocalDate().isAfter(day)) {
+            LocalDate newest = context.newestBooked().get(accountId);
+            if (at == null || !at.atZone(context.zone()).toLocalDate().isAfter(day) || newest == null || !newest.isAfter(day)) {
                 return false;
             }
         }
@@ -719,12 +729,15 @@ public class FixedCostService {
                 cost.counterpartyIban(), cost.accountId());
     }
 
-    /** Keeps the stored amount: the flagged charge is accepted at its price. A later charge with another price is flagged again. */
+    /**
+     * Keeps the stored amount: the flagged charge is accepted at its price, and that price is stored with it. A later charge with
+     * another price is flagged again, and so is the same charge when the bank corrects its amount (issue #71).
+     */
     @Transactional
     public void keepAmount(long id, long transactionId) {
-        requirePriceFlag(get(id), transactionId);
-        jdbc.sql("insert or ignore into fixed_cost_price_kept (fixed_cost_id, transaction_id, kept_at) values (?, ?, ?)")
-                .params(id, transactionId, now()).update();
+        FixedCostFlag flag = requirePriceFlag(get(id), transactionId);
+        jdbc.sql("insert or replace into fixed_cost_price_kept (fixed_cost_id, transaction_id, kept_at, amount_cents) values (?, ?, ?, ?)")
+                .params(id, transactionId, now(), flag.charged().orElseThrow().cents()).update();
     }
 
     private void requireMissingFlag(FixedCost cost, YearMonth month) {

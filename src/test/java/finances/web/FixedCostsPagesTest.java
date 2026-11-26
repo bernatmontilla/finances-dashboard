@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import finances.accounts.AccountService;
 import finances.accounts.DeliveredTransaction;
+import finances.accounts.FixedCostProposalService;
 import finances.accounts.FixedCostService;
 import finances.accounts.Kind;
 import finances.accounts.Scope;
@@ -90,10 +91,13 @@ class FixedCostsPagesTest {
     @Autowired
     FixedCostService fixedCosts;
 
+    @Autowired
+    FixedCostProposalService proposals;
+
     @BeforeEach
     void emptyDatabase() {
         for (String table : new String[] {"fixed_cost_paid", "fixed_cost", "reservation", "after_tax_reserved", "after_tax_value",
-                "after_tax_fetch", "sync_run", "bank_account", "bank_consent", "transactions", "balance", "account"}) {
+                "after_tax_fetch", "sync_run", "bank_account", "bank_consent", "fixed_cost_proposal", "fixed_cost_rejection", "transactions", "balance", "account"}) {
             jdbc.sql("delete from " + table).update();
         }
     }
@@ -377,12 +381,12 @@ class FixedCostsPagesTest {
         deliverEnergy(account, today(), -15000, "REF-1");
 
         String page = get("/fixed-costs").body();
-        assertThat(page).contains("The latest charge was €150.00, not €100.00").contains("Take over €150.00").contains("Keep €100.00");
+        assertThat(page).contains("The latest charge, booked " + today() + ", was €150.00, not €100.00").contains("Take over €150.00").contains("Keep €100.00");
         assertThat(get("/").body()).contains("Fixed costs: 1 needs a look").contains("id=\"fixed-cost-flags\"");
 
         long transaction = jdbc.sql("select id from transactions where reference = 'REF-1'").query(Long.class).single();
         assertThat(post("/fixed-costs/" + id + "/keep-amount", Map.of("transaction", Long.toString(transaction))).statusCode()).isEqualTo(302);
-        assertThat(get("/fixed-costs").body()).doesNotContain("The latest charge was");
+        assertThat(get("/fixed-costs").body()).doesNotContain("The latest charge, booked");
         assertThat(get("/").body()).doesNotContain("need a look").doesNotContain("needs a look");
         assertThat(jdbc.sql("select amount_cents from fixed_cost where id = ?").param(id).query(Long.class).single()).isEqualTo(10000);
 
@@ -391,7 +395,7 @@ class FixedCostsPagesTest {
         assertThat(get("/fixed-costs").body()).contains("Take over €150.00");
         assertThat(post("/fixed-costs/" + id + "/take-over-amount", Map.of("transaction", Long.toString(second))).statusCode()).isEqualTo(302);
         assertThat(jdbc.sql("select amount_cents from fixed_cost where id = ?").param(id).query(Long.class).single()).isEqualTo(15000);
-        assertThat(get("/fixed-costs").body()).doesNotContain("The latest charge was").contains("Paid this month");
+        assertThat(get("/fixed-costs").body()).doesNotContain("The latest charge, booked").contains("Paid this month");
     }
 
     @Test
@@ -534,5 +538,109 @@ class FixedCostsPagesTest {
         assertThat(early.statusCode()).isEqualTo(400);
         assertThat(early.body()).contains("A fixed cost cannot end before its first charge.");
         assertThat(jdbc.sql("select count(*) from fixed_cost where ended_on is not null").query(Integer.class).single()).isZero();
+    }
+
+    // ----- proposals (issue #71)
+
+    /** Three monthly charges of Example Telecom (an IBAN) ending today: a monthly proposal after detection. */
+    private void telecomCharges(long account, String reference) {
+        for (int back = 2; back >= 0; back--) {
+            transactions.deliver(account, Source.CSV, List.of(new DeliveredTransaction(today().minusMonths(back), null, -2000, "EUR",
+                    "Example Telecom", "NL80SHOP0000000102", "Fictional payment", TransactionStatus.BOOKED, reference + back,
+                    "raw " + reference + back)));
+        }
+    }
+
+    private long proposalId() {
+        return jdbc.sql("select id from fixed_cost_proposal").query(Long.class).single();
+    }
+
+    @Test
+    void aProposalIsShownWithItsAgeAndChangesNoNumberUntilTheOwnerAddsIt() throws Exception {
+        long everyday = accounts.addManual("Everyday", Scope.PRIVATE, Kind.CURRENT, null).id();
+        accounts.addBalance(everyday, Money.eur(123456), today());
+        String before = headlineAmount(get("/").body(), "Private free to spend");
+        telecomCharges(everyday, "TEL-");
+        proposals.detect();
+
+        String page = get("/fixed-costs").body();
+        assertThat(page).contains("Found in your transactions").contains("Example Telecom").contains("€20.00").contains("every month")
+                .contains("Private · 3 charges,").contains("the latest booked " + today()).contains("Add as fixed cost").contains("Not a fixed cost")
+                .contains("id=\"proposals\"");
+        String overview = get("/").body();
+        assertThat(overview).contains("Fixed costs: 1 needs a look");
+        assertThat(headlineAmount(overview, "Private free to spend")).as("a proposal changes no number").isEqualTo(before);
+        assertThat(jdbc.sql("select count(*) from fixed_cost").query(Integer.class).single()).isZero();
+        assertThat(fixedCosts.summary(Scope.PRIVATE).running()).isZero();
+    }
+
+    @Test
+    void confirmingAProposalFillsTheAddFormInAndPostingItMakesTheFixedCostAndHidesTheProposal() throws Exception {
+        long everyday = accounts.addManual("Everyday", Scope.PRIVATE, Kind.CURRENT, null).id();
+        telecomCharges(everyday, "TEL-");
+        proposals.detect();
+        long id = proposalId();
+
+        String filled = get("/fixed-costs/new?proposal=" + id).body();
+        assertThat(filled).containsPattern("name=\"name\"[^>]*value=\"Example Telecom\"").containsPattern("name=\"amount\"[^>]*value=\"20.00\"")
+                .containsPattern("name=\"firstDue\"[^>]*value=\"" + today() + "\"").containsPattern("value=\"NL80SHOP0000000102\"")
+                .containsPattern("value=\"monthly\"\\s+selected").containsPattern("name=\"counterparty\"[^>]*value=\"Example Telecom\"");
+
+        Map<String, String> create = form("Example Telecom", "private", "20.00", "monthly", today().toString());
+        create.put("counterparty", "Example Telecom");
+        create.put("iban", "NL80SHOP0000000102");
+        assertThat(post("/fixed-costs", create).statusCode()).isEqualTo(302);
+
+        assertThat(jdbc.sql("select count(*) from fixed_cost").query(Integer.class).single()).isEqualTo(1);
+        assertThat(jdbc.sql("select count(*) from fixed_cost_match").query(Integer.class).single()).as("the newest charge is linked").isEqualTo(1);
+        String page = get("/fixed-costs").body();
+        assertThat(page).doesNotContain("Found in your transactions").contains("Paid this month");
+        assertThat(get("/").body()).doesNotContain("need a look").doesNotContain("needs a look");
+    }
+
+    @Test
+    void rejectingAProposalHidesItAndUndoBringsItBackAndAStaleIdIsRefusedWithStatus400() throws Exception {
+        long everyday = accounts.addManual("Everyday", Scope.PRIVATE, Kind.CURRENT, null).id();
+        telecomCharges(everyday, "TEL-");
+        proposals.detect();
+        long id = proposalId();
+
+        assertThat(post("/fixed-costs/proposals/" + id + "/reject", Map.of()).statusCode()).isEqualTo(302);
+        String page = get("/fixed-costs").body();
+        assertThat(page).doesNotContain("Found in your transactions").contains("id=\"rejections\"").contains("Not fixed costs (1)")
+                .contains("Example Telecom").contains("Undo");
+        assertThat(get("/").body()).doesNotContain("need a look").doesNotContain("needs a look");
+        proposals.detect();
+        assertThat(get("/fixed-costs").body()).as("still rejected after a new detection").doesNotContain("Found in your transactions");
+
+        HttpResponse<String> again = post("/fixed-costs/proposals/" + id + "/reject", Map.of());
+        assertThat(again.statusCode()).isEqualTo(400);
+        assertThat(again.body()).contains("This proposal is no longer open");
+        HttpResponse<String> stale = get("/fixed-costs/new?proposal=" + id);
+        assertThat(stale.statusCode()).isEqualTo(400);
+        assertThat(stale.body()).contains("This proposal is no longer open").containsPattern("name=\"name\"[^>]*value=\"\"");
+        assertThat(get("/fixed-costs/new?proposal=4711").statusCode()).isEqualTo(400);
+
+        long rejection = jdbc.sql("select id from fixed_cost_rejection").query(Long.class).single();
+        assertThat(post("/fixed-costs/rejections/" + rejection + "/undo", Map.of()).statusCode()).isEqualTo(302);
+        assertThat(get("/fixed-costs").body()).contains("Found in your transactions").doesNotContain("id=\"rejections\"");
+        HttpResponse<String> gone = post("/fixed-costs/rejections/" + rejection + "/undo", Map.of());
+        assertThat(gone.statusCode()).isEqualTo(400);
+        assertThat(gone.body()).contains("This rejection does not exist any more");
+    }
+
+    @Test
+    void theOverviewLineCountsFlagsAndOpenProposalsTogether() throws Exception {
+        long everyday = accounts.addManual("Everyday", Scope.PRIVATE, Kind.CURRENT, null).id();
+        addEnergy();
+        deliverEnergy(everyday, today(), -15000, "REF-1");
+        telecomCharges(everyday, "TEL-");
+        for (int back = 2; back >= 0; back--) {
+            transactions.deliver(everyday, Source.CSV, List.of(new DeliveredTransaction(today().minusMonths(back), null, -3000, "EUR",
+                    "Example Gym", "NL53SHOP0000000103", "Fictional payment", TransactionStatus.BOOKED, "GYM-" + back, "raw gym " + back)));
+        }
+        proposals.detect();
+
+        assertThat(get("/").body()).contains("Fixed costs: 3 need a look");
     }
 }

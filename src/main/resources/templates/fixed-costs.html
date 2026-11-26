@@ -15,6 +15,24 @@
     <p class="muted"><span th:text="#{fixedcosts.hint}"></span> <a th:href="@{/reservations}" th:text="#{fixedcosts.toReservations}"></a></p>
     <p th:replace="~{fragments :: error}"></p>
     <p><a class="button" th:href="@{/fixed-costs/new}" th:text="#{fixedcosts.add}"></a></p>
+    <section th:if="${!proposals.empty}" id="proposals">
+      <h2 th:text="#{fixedcosts.proposals.title}"></h2>
+      <p class="muted" th:text="#{fixedcosts.proposals.note}"></p>
+      <ul class="list fixed-costs">
+        <li th:each="proposal : ${proposals}" class="fixed-cost-proposal">
+          <strong class="fc-name" th:text="${proposal.name}"></strong>
+          <span class="amount fc-amount" th:text="#{fixedcosts.amountEvery(${proposal.amount}, #{${proposal.rhythmKey}})}"></span>
+          <span class="muted" th:text="#{fixedcosts.proposal.seen(#{${proposal.scopeKey}}, ${proposal.charges})}"></span>
+          <span class="muted nowrap" th:text="#{fixedcosts.proposal.latest(${proposal.latestBooked})}"></span>
+          <div class="actions">
+            <a class="button" th:href="@{/fixed-costs/new(proposal=${proposal.id})}" th:text="#{fixedcosts.proposal.add}"></a>
+            <form method="post" th:action="@{/fixed-costs/proposals/{id}/reject(id=${proposal.id})}" class="inline">
+              <button type="submit" class="secondary" th:text="#{fixedcosts.proposal.reject}"></button>
+            </form>
+          </div>
+        </li>
+      </ul>
+    </section>
     <p th:if="${groups.empty}" th:text="#{fixedcosts.none}"></p>
     <section th:each="group : ${groups}" th:id="${'scope-' + group.slug}">
       <h2 th:text="#{${group.labelKey}}"></h2>
@@ -41,6 +59,22 @@
         </ul>
       </th:block>
     </section>
+    <details th:if="${!rejections.empty}" id="rejections">
+      <summary th:text="#{fixedcosts.rejections.title(${rejections.size()})}"></summary>
+      <p class="muted" th:text="#{fixedcosts.rejections.note}"></p>
+      <ul class="list">
+        <li th:each="rejection : ${rejections}">
+          <strong th:text="${rejection.name}"></strong>
+          <span class="amount" th:text="${rejection.amount}"></span>
+          <span class="muted" th:text="#{${rejection.scopeKey}}"></span>
+          <div class="actions">
+            <form method="post" th:action="@{/fixed-costs/rejections/{id}/undo(id=${rejection.id})}" class="inline">
+              <button type="submit" class="secondary" th:text="#{fixedcosts.rejection.undo}"></button>
+            </form>
+          </div>
+        </li>
+      </ul>
+    </details>
   </main>
 </body>
 </html>

@@ -100,6 +100,12 @@ mention the test here.
   are a counterparty's is `windowCharges` only; the tolerance is `ReservationService.amountClose`; the stale map of the fixed costs page and the
   overview includes archived accounts (`FixedCostViews.staleOfAll`) but the overview's top line does not (`docs/decisions/22-fixed-cost-flags.md`).
 
+- Fixed cost proposals (#71): the rule is `RepeatingCharges` (pure, no database) and only `FixedCostProposalService` writes `fixed_cost_proposal`
+  and `fixed_cost_rejection`; proposals are derived data (replaced by `detect()`, ids kept by `group_key`), a rejection is the owner's and only
+  its undo deletes it, so never delete it from a sync, an import or a migration. Dates and amounts use `FixedCostService.MATCH_DAYS` and
+  `ReservationService.amountClose`, no second threshold. `detect()` reads outside any write transaction and runs after `matchPayments()`, in
+  its own try (`docs/decisions/71-fixed-cost-proposals.md`). A kept price stores its amount (`fixed_cost_price_kept.amount_cents`).
+
 ## The target machine
 
 - Low memory, possibly shared with other services: the heap cap is real. Stream large result sets.

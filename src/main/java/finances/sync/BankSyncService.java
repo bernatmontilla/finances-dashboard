@@ -4,6 +4,7 @@ import finances.accounts.Account;
 import finances.accounts.AccountService;
 import finances.accounts.BankDeliveryReport;
 import finances.accounts.DeliveredTransaction;
+import finances.accounts.FixedCostProposalService;
 import finances.accounts.FixedCostService;
 import finances.accounts.DeliveryReport;
 import finances.accounts.TransactionService;
@@ -67,13 +68,14 @@ public class BankSyncService {
     private final AccountService accounts;
     private final TransactionService transactions;
     private final FixedCostService fixedCosts;
+    private final FixedCostProposalService proposals;
     private final Clock clock;
     private final TransactionTemplate inTransaction;
     private final int overlapDays;
     private final ReentrantLock running = new ReentrantLock();
 
     public BankSyncService(EnableBankingClient client, BankStore store, SessionFiles sessions, AccountService accounts,
-            TransactionService transactions, FixedCostService fixedCosts, Clock clock, PlatformTransactionManager transactionManager,
+            TransactionService transactions, FixedCostService fixedCosts, FixedCostProposalService proposals, Clock clock, PlatformTransactionManager transactionManager,
             @Value("${finances.sync.overlap-days:7}") int overlapDays) {
         this.client = client;
         this.store = store;
@@ -81,6 +83,7 @@ public class BankSyncService {
         this.accounts = accounts;
         this.transactions = transactions;
         this.fixedCosts = fixedCosts;
+        this.proposals = proposals;
         this.clock = clock;
         this.inTransaction = new TransactionTemplate(transactionManager);
         this.overlapDays = Math.max(1, overlapDays);
@@ -200,6 +203,19 @@ public class BankSyncService {
             fixedCosts.matchPayments();
         } catch (RuntimeException e) {
             LOG.warn("Matching fixed costs failed: {}", e.getClass().getSimpleName());
+        }
+        proposeFixedCosts();
+    }
+
+    /**
+     * Looks for fixed costs in the repeating transactions (issue #71), after the matching and with the same care: it never fails the
+     * sync, and a failure is logged by its class only.
+     */
+    private void proposeFixedCosts() {
+        try {
+            proposals.detect();
+        } catch (RuntimeException e) {
+            LOG.warn("Proposing fixed costs failed: {}", e.getClass().getSimpleName());
         }
     }
 

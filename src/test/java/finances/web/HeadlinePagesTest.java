@@ -212,7 +212,7 @@ class HeadlinePagesTest {
         String priv = headline(page, PRIVATE);
         assertThat(amountOf(priv)).as("a stale account is still counted").isEqualTo("€1,334.56");
         assertThat(priv).contains("Stale").contains("Bank Everyday").contains("sync failed: the bank limits fetches, wait about six hours")
-                .contains("Oldest figure:");
+                .contains("Oldest part:");
         assertThat(headline(page, BUSINESS)).doesNotContain("Stale");
         assertThat(get("/build-up/private")).contains("Bank Everyday").contains("Stale");
     }

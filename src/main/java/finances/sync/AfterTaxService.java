@@ -29,7 +29,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  *
  * <p>A fetch runs on its own thread with its own flag: it never shares the bank sync's lock and never waits for it, and the
  * daily run and "Sync now" only start it and go on. A start while one runs is skipped. The request is made with no database
- * transaction open; one short transaction then stores the value (when valid and not the one stored last) and the record of
+ * transaction open; one short transaction then stores the value (when valid and not already stored) and the record of
  * the fetch. Nothing here logs more than the short outcome code (hard rule 11).
  */
 @Service
@@ -63,6 +63,11 @@ public class AfterTaxService {
     private final Clock clock;
     private final TransactionTemplate inTransaction;
     private final AtomicBoolean busy = new AtomicBoolean();
+    /**
+     * The reason code of a fetch that ended badly and could not be recorded because the database stayed busy; kept in memory
+     * (a restart drops it) until a fetch record is written, so the pages do not go on saying "fetched" (issue #19).
+     */
+    private volatile String unrecordedFailure;
     private final ExecutorService executor = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "after-tax-fetch");
         thread.setDaemon(true);
@@ -169,19 +174,32 @@ public class AfterTaxService {
             inTransaction.executeWithoutResult(tx -> {
                 // The first statement is a write, so the single SQLite writer is taken (and waited for) up front instead of
                 // upgrading a read lock halfway, which fails at once when the bank sync committed in between.
-                store.insertFetch(row(trigger, started, failure, status));
+                long fetchId = store.insertFetch(row(trigger, started, failure, status));
                 if (value != null) {
-                    Optional<AfterTaxValue> newest = store.newest();
-                    if (newest.isEmpty() || !newest.get().sameAnswerAs(value)) {
+                    Optional<AfterTaxValue> current = store.current();
+                    // A valid answer calculated before the value shown is kept in the history but does not replace it. It is not a
+                    // failure: the source answered, and the value shown keeps ageing from its own moment.
+                    if (current.isPresent() && value.asOf().isBefore(current.get().asOf())) {
+                        store.setReason(fetchId, AfterTaxReason.OLDER_THAN_KNOWN.code());
+                    }
+                    // Nothing is stored twice (hard rule 10): not the answer that is already the current one, and not an older
+                    // answer that is already in the history. An answer for the current moment that the source went back to
+                    // is stored again, because the one received last is the one shown.
+                    boolean sameAsCurrent = current.isPresent() && current.get().sameAnswerAs(value);
+                    boolean olderAndHeld = current.isPresent() && value.asOf().isBefore(current.get().asOf()) && store.holds(value);
+                    if (!sameAsCurrent && !olderAndHeld) {
                         store.insertValue(value);
                     }
                 }
             });
+            unrecordedFailure = null;
             return failure;
         } catch (RuntimeException e) {
             try {
                 inTransaction.executeWithoutResult(tx -> store.insertFetch(row(trigger, started, AfterTaxReason.STORE_FAILED, null)));
+                unrecordedFailure = null;
             } catch (RuntimeException again) {
+                unrecordedFailure = AfterTaxReason.STORE_FAILED.code();
                 LOG.warn("An after-tax fetch could not be recorded ({}).", again.getClass().getSimpleName());
             }
             return AfterTaxReason.STORE_FAILED;
@@ -213,9 +231,12 @@ public class AfterTaxService {
         return client.configured() && !client.https() && client.tokenPresent() && !client.loopbackHost();
     }
 
-    /** The newest value received, or empty when there is none yet. */
-    public Optional<AfterTaxValue> newest() {
-        return store.newest();
+    /**
+     * The value shown: the one with the latest moment ({@code as_of}), and when two share it the one received last, or empty
+     * when there is none yet. An answer calculated before it is in the history but is never this value.
+     */
+    public Optional<AfterTaxValue> current() {
+        return store.current();
     }
 
     /** Every distinct value received, oldest first (later milestones chart it). */
@@ -228,18 +249,22 @@ public class AfterTaxService {
         return store.fetches(limit);
     }
 
-    /** The reason code of the newest fetch when it failed, else null. */
+    /** The reason code of the newest fetch when it failed, else null; a failure that could not be recorded counts as the newest. */
     public String lastFailure() {
+        String unrecorded = unrecordedFailure;
+        if (unrecorded != null) {
+            return unrecorded;
+        }
         return store.fetches(1).stream().filter(row -> !row.ok()).map(AfterTaxFetchRow::reason).findFirst().orElse(null);
     }
 
-    /** Why the newest value is stale, or empty when it is fresh or there is none. */
+    /** Why the current value is stale, or empty when it is fresh or there is none. */
     public Optional<Freshness.Stale> standing() {
-        return standing(newest().orElse(null));
+        return standing(current().orElse(null));
     }
 
-    /** Why the given (newest) value is stale, or empty when it is fresh or null. */
-    public Optional<Freshness.Stale> standing(AfterTaxValue newest) {
-        return Freshness.afterTax(Instant.now(clock), newest == null ? null : newest.asOf(), lastFailure(), limits.afterTax());
+    /** Why the given (current) value is stale, or empty when it is fresh or null. */
+    public Optional<Freshness.Stale> standing(AfterTaxValue current) {
+        return Freshness.afterTax(Instant.now(clock), current == null ? null : current.asOf(), lastFailure(), limits.afterTax());
     }
 }

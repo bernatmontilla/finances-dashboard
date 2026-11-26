@@ -3,6 +3,7 @@ package finances.sync;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -25,8 +26,25 @@ class AfterTaxStore {
         this.jdbc = jdbc;
     }
 
-    Optional<AfterTaxValue> newest() {
-        return jdbc.sql(VALUE + " order by id desc limit 1").query(AfterTaxStore::bare).optional().map(this::withLines);
+    /**
+     * The current value: the one with the latest {@code as_of}, and when two share it the one received last. Moments are
+     * compared as instants, never as text ({@code ...:00Z} sorts after {@code ...:00.500Z} although it is earlier). The history
+     * is one row per distinct answer, so reading every moment and choosing here is cheap.
+     */
+    Optional<AfterTaxValue> current() {
+        record Moment(long id, Instant asOf) {
+        }
+        return jdbc.sql("select id, as_of from after_tax_value")
+                .query((rs, row) -> new Moment(rs.getLong("id"), Instant.parse(rs.getString("as_of"))))
+                .list().stream()
+                .max(Comparator.comparing(Moment::asOf).thenComparingLong(Moment::id))
+                .flatMap(moment -> jdbc.sql(VALUE + " where id = ?").param(moment.id()).query(AfterTaxStore::bare).optional())
+                .map(this::withLines);
+    }
+
+    /** Whether any stored value is this same answer (hard rule 10: reading the same data twice stores nothing twice). */
+    boolean holds(AfterTaxValue value) {
+        return history().stream().anyMatch(stored -> stored.sameAnswerAs(value));
     }
 
     /** The values received, oldest first. */
@@ -50,15 +68,23 @@ class AfterTaxStore {
         return id;
     }
 
-    /** Records a fetch and drops the oldest ones beyond {@value #KEEP_FETCHES}. */
-    void insertFetch(AfterTaxFetchRow row) {
+    /** Records a fetch and drops the oldest ones beyond {@value #KEEP_FETCHES}; returns its id. */
+    long insertFetch(AfterTaxFetchRow row) {
+        KeyHolder key = new GeneratedKeyHolder();
         jdbc.sql("insert into after_tax_fetch (started_at, finished_at, trigger, outcome, reason, http_status) values (?, ?, ?, ?, ?, ?)")
                 .params(row.startedAt().toString(), row.finishedAt().toString(), row.trigger(), row.ok() ? "ok" : "failed", row.reason(),
                         row.httpStatus())
-                .update();
+                .update(key);
+        long id = key.getKey().longValue();
         jdbc.sql("delete from after_tax_fetch where id not in (select id from after_tax_fetch order by id desc limit ?)")
                 .param(KEEP_FETCHES)
                 .update();
+        return id;
+    }
+
+    /** Sets the note of a fetch that went well (the reason column of an ok row says what was special about it). */
+    void setReason(long fetchId, String reason) {
+        jdbc.sql("update after_tax_fetch set reason = ? where id = ?").params(reason, fetchId).update();
     }
 
     /** The newest fetches, newest first. */

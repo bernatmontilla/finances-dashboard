@@ -12,6 +12,11 @@
     <nav th:replace="~{fragments :: nav}"></nav>
     <h1 th:text="#{app.name}"></h1>
     <p class="muted" th:text="#{overview.version(${version})}"></p>
+    <section class="headlines" id="headlines">
+      <th:block th:each="headline : ${headlines}">
+        <div th:replace="~{fragments :: headline(${headline}, true)}"></div>
+      </th:block>
+    </section>
     <div th:if="${!attention.empty}" class="notice warning" id="attention">
       <span th:text="#{overview.stale(${attention.size()})}"></span>
       <ul class="attention">

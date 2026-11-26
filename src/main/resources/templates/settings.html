@@ -90,6 +90,7 @@
             <span class="muted" th:text="${fetch.when}"></span>
             <span class="muted" th:text="#{${fetch.triggerKey}}"></span>
             <strong th:if="${fetch.ok}" th:text="#{aftertax.fetch.ok}"></strong>
+            <span th:if="${fetch.hasNote()}" class="muted" th:text="#{${fetch.reasonKey}}"></span>
             <strong th:unless="${fetch.ok}" class="error" th:text="#{aftertax.fetch.failed(#{${fetch.reasonKey}})}"></strong>
             <span th:if="${fetch.hasStatus()}" class="muted" th:text="#{aftertax.fetch.status(${fetch.status})}"></span>
           </li>

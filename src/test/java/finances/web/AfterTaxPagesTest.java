@@ -145,11 +145,17 @@ class AfterTaxPagesTest {
         SOURCE.answer("{\"contract_version\": 1, \"as_of\": \"" + Instant.now() + "\", \"currency\": \"EUR\", \"available_cents\": 12.5}");
         assertThat(test()).contains("failed: an amount was not a whole number of cents").contains("€12,345.00").contains("Stale");
 
-        // Old: a valid answer whose own moment is older than the limit is stale although the request worked.
+        // An answer calculated before the value shown is valid but does not replace it (issue #19: it used to, being received last).
         SOURCE.answer(answerAsOf(Duration.ofDays(5)));
-        String old = test();
-        assertThat(old).contains("The source answered with a valid value.").contains("(5 days ago)").contains("Stale")
-                .contains("the figure from the source is 5 days old");
+        String older = test();
+        assertThat(older).contains("The source answered with a valid value.").contains("a valid answer, but older than the value shown")
+                .doesNotContain("(5 days ago)").doesNotContain("the figure from the source is 5 days old");
+
+        // Old: a value whose own moment is older than the limit is stale although the last request worked (the moments stored
+        // so far are moved back, as time itself would do).
+        jdbc.sql("update after_tax_value set as_of = ?").param(Instant.now().minus(Duration.ofDays(5)).toString()).update();
+        String old = get("/settings").body();
+        assertThat(old).contains("(5 days ago)").contains("Stale").contains("the figure from the source is 5 days old");
 
         // Fresh again, with a gross that does not add up: the available amount as sent, with the warning.
         SOURCE.answer(FakeAfterTaxSource.valid(Instant.now().minusSeconds(600)).replace("1234500", "1234501"));

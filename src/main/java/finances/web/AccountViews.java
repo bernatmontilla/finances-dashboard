@@ -8,19 +8,39 @@ import finances.accounts.BankBalanceInfo;
 import finances.accounts.Kind;
 import finances.accounts.Scope;
 import finances.money.Freshness;
+import finances.outbound.BankApiException;
+import finances.sync.AfterTaxReason;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Stream;
 
 /**
  * What a page shows of accounts: texts are message keys (the templates hold none) and amounts are
  * formatted by {@code Money}. Every balance carries its date and its age (hard rule 9).
  */
 final class AccountViews {
+
+    /**
+     * The short codes a failed bank run can carry: what {@code BankSyncService} stores (each {@link BankApiException.Reason}
+     * lower-cased, a consent that ended written as {@code consent_expired}, or {@code store_failed}) and {@code unexpected}.
+     * Only a code on this list becomes a message key.
+     */
+    static final Set<String> BANK_REASON_CODES = Stream.concat(
+            Arrays.stream(BankApiException.Reason.class.getEnumConstants())
+                    .map(reason -> reason == BankApiException.Reason.CONSENT_ENDED ? "consent_expired" : reason.name().toLowerCase(Locale.ROOT)),
+            Stream.of("store_failed", "unexpected")).collect(java.util.stream.Collectors.toUnmodifiableSet());
+
+    /** The codes of a failed fetch of the after-tax source ({@link AfterTaxReason}) and {@code unexpected}. */
+    static final Set<String> SOURCE_REASON_CODES = Stream.concat(Arrays.stream(AfterTaxReason.values()).map(AfterTaxReason::code),
+            Stream.of("unexpected")).collect(java.util.stream.Collectors.toUnmodifiableSet());
 
     private AccountViews() {
     }
@@ -130,18 +150,24 @@ final class AccountViews {
         }
         return switch (stale.reason()) {
             case CONSENT_EXPIRED -> new StaleView("stale.reason.consent_expired", null, null);
-            case SYNC_FAILED -> new StaleView("stale.reason.sync_failed", null,
-                    "bank.reason." + (stale.detail() == null ? "unexpected" : stale.detail()));
+            case SYNC_FAILED -> failed("stale.reason.sync_failed", "bank.reason.", BANK_REASON_CODES, stale.detail());
             case SYNC_OLD -> stale.age().toHours() >= 48
                     ? new StaleView("stale.reason.sync_old.days", stale.age().toDays(), null)
                     : new StaleView("stale.reason.sync_old.hours", stale.age().toHours(), null);
             case NOT_UPDATED -> new StaleView("stale.reason.not_updated", stale.age().toDays(), null);
-            case SOURCE_FAILED -> new StaleView("stale.reason.source_failed", null,
-                    "aftertax.reason." + (stale.detail() == null ? "unexpected" : stale.detail()));
+            case SOURCE_FAILED -> failed("stale.reason.source_failed", "aftertax.reason.", SOURCE_REASON_CODES, stale.detail());
             case SOURCE_OLD -> stale.age().toHours() >= 48
                     ? new StaleView("stale.reason.source_old.days", stale.age().toDays(), null)
                     : new StaleView("stale.reason.source_old.hours", stale.age().toHours(), null);
         };
+    }
+
+    /** A failed run or fetch names its reason only when the code is one this application knows; any other text is never a key. */
+    private static StaleView failed(String key, String prefix, Set<String> known, String detail) {
+        if (detail == null) {
+            return new StaleView(key, null, prefix + "unexpected");
+        }
+        return known.contains(detail) ? new StaleView(key, null, prefix + detail) : new StaleView("stale.reason.unknown", null, null);
     }
 
     static AccountRow row(AccountSummary summary, LocalDate today, Map<Long, Instant> delivered, ZoneId zone,

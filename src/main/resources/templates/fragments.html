@@ -33,6 +33,51 @@
     <span th:if="${view.hasDetail()}" th:text="#{${view.key}(#{${view.detailKey}})}"></span>
   </details>
 
+  <!--
+    A headline number (issue #19): its title, its amount (or the one line that says why there is none), the age of its oldest
+    counted part, and a stale mark that names every stale part when opened. The amount links to the build-up when `linked`.
+  -->
+  <div th:fragment="headline(headline, linked)" class="headline">
+    <h2 class="headline-title">
+      <a th:if="${linked}" th:href="@{/build-up/{slug}(slug=${headline.slug})}" th:text="#{${headline.titleKey}}"></a>
+      <span th:unless="${linked}" th:text="#{${headline.titleKey}}"></span>
+    </h2>
+    <th:block th:if="${headline.shown()}">
+      <p class="headline-amount" th:classappend="${headline.negative} ? 'negative'">
+        <a th:if="${linked}" th:href="@{/build-up/{slug}(slug=${headline.slug})}" th:text="${headline.amount}"></a>
+        <span th:unless="${linked}" th:text="${headline.amount}"></span>
+      </p>
+      <p th:if="${headline.negative}" class="headline-negative" th:text="#{headline.negative}"></p>
+      <p class="muted headline-age">
+        <span th:if="${headline.severalParts}" th:text="#{headline.oldest}"></span>
+        <span th:text="#{balance.asOf(${headline.oldest.date})}"></span>
+        <span th:text="#{${headline.oldest.ageKey}(${headline.oldest.ageArg})}"></span>
+      </p>
+      <details th:if="${headline.hasStale()}" class="stale headline-stale">
+        <summary th:text="#{stale.mark}"></summary>
+        <div>
+          <p th:text="#{headline.stale.intro}"></p>
+          <ul class="stale-parts">
+            <li th:each="part : ${headline.stale}">
+              <strong th:if="${part.hasName()}" th:text="${part.name}"></strong>
+              <strong th:unless="${part.hasName()}" th:text="#{${part.nameKey}}"></strong>
+              <span th:if="${!part.stale.hasDetail()}" th:text="#{${part.stale.key}(${part.stale.arg})}"></span>
+              <span th:if="${part.stale.hasDetail()}" th:text="#{${part.stale.key}(#{${part.stale.detailKey}})}"></span>
+            </li>
+          </ul>
+        </div>
+      </details>
+    </th:block>
+    <th:block th:unless="${headline.shown()}">
+      <p class="headline-hidden" th:text="#{${headline.hidden.textKey}}"></p>
+      <ul th:if="${headline.hidden.hasLinks()}" class="attention headline-links">
+        <li th:each="link : ${headline.hidden.links}">
+          <a th:href="@{${link.href}}" th:text="${link.hasKey()} ? #{${link.textKey}} : ${link.text}"></a>
+        </li>
+      </ul>
+    </th:block>
+  </div>
+
   <span th:fragment="delivered(view)" class="muted delivered">
     <span th:if="${view == null}" th:text="#{transactions.neverDelivered}"></span>
     <th:block th:if="${view != null}">

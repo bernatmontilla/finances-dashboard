@@ -3,7 +3,7 @@ package finances.sync;
 import finances.outbound.AfterTaxException;
 
 /**
- * Why a fetch of the after-tax source gave no new value: the fixed short codes that are stored and shown through
+ * Why a fetch of the after-tax source gave no new value (or, for {@link #OLDER_THAN_KNOWN}, no new current value): the fixed short codes that are stored and shown through
  * {@code aftertax.reason.<code>}. Never a text from the source (hard rule 11).
  */
 public enum AfterTaxReason {
@@ -19,7 +19,9 @@ public enum AfterTaxReason {
     VERSION("version"),
     AS_OF_IN_FUTURE("as_of_in_future"),
     TOKEN_UNREADABLE("token_unreadable"),
-    STORE_FAILED("store_failed");
+    STORE_FAILED("store_failed"),
+    /** Not a failure: a valid answer whose moment is older than the value stored, so it does not replace it (issue #19). */
+    OLDER_THAN_KNOWN("older_than_known");
 
     private final String code;
 

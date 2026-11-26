@@ -113,7 +113,7 @@ class BackupServiceTest {
             assertThat(zip.stream().map(ZipEntry::getName).toList()).containsExactly("manifest.properties", "finances.db");
             String manifest = new String(zip.getInputStream(zip.getEntry("manifest.properties")).readAllBytes(), StandardCharsets.UTF_8);
             assertThat(manifest).contains("format=finances-backup").contains("formatVersion=1").contains("applicationVersion=1.2.3")
-                    .contains("schemaVersion=7").contains("createdAt=2026-06-15T10\\:00\\:00Z").contains("databaseSha256=");
+                    .contains("schemaVersion=8").contains("createdAt=2026-06-15T10\\:00\\:00Z").contains("databaseSha256=");
         }
         assertThat(new String(Files.readAllBytes(file), StandardCharsets.ISO_8859_1)).as("no secret in the file").doesNotContain("not-a-real-key");
         assertNothingStaged(folder);
@@ -732,6 +732,33 @@ class BackupServiceTest {
                 .anySatisfy(t -> assertThat(t.note()).isEqualTo(BackupFixtures.NOTE))
                 .anySatisfy(t -> assertThat(t.counterpartyName()).isEqualTo("Example Energy"));
         assertThat(restored.accounts.history(1)).extracting(b -> b.amount().cents()).containsExactly(100000L, 123456L);
+        assertThat(restored.count("reservation")).as("an old backup holds no reservations").isZero();
+    }
+
+    @Test
+    void aBackupWipeRestoreBringsBackOpenAndClosedReservationsWithTheirLinks() throws Exception {
+        Path folder = folder("data");
+        BackupFixtures original = BackupFixtures.open(folder).fill();
+        var yearly = original.reservations.create("Example Insurance premium", finances.accounts.Scope.PRIVATE,
+                finances.money.Money.parse("1234.56"), java.time.LocalDate.of(2026, 12, 31), true, null);
+        original.reservations.close(yearly.id()); // closed, and its next round is open and linked
+        original.reservations.create("Example Telecom bundle", finances.accounts.Scope.BUSINESS, finances.money.Money.parse("100.00"),
+                java.time.LocalDate.of(2026, 9, 1), false, finances.money.Money.parse("40.00"));
+        String before = original.reservationRows();
+        assertThat(before).contains("Example Insurance premium").contains("Example Telecom bundle");
+        Path file = backup(folder, temp.resolve("reservations.zip"));
+
+        BackupFixtures.wipe(folder);
+        BackupService service = service(folder);
+        RestorePlan plan = service.stage(file);
+        service.restore(plan.token(), "RESTORE");
+
+        BackupFixtures restored = BackupFixtures.open(folder);
+        assertThat(restored.reservationRows()).isEqualTo(before);
+        assertThat(restored.reservations.closed(finances.accounts.Scope.PRIVATE)).hasSize(1);
+        assertThat(restored.reservations.open(finances.accounts.Scope.PRIVATE)).singleElement()
+                .satisfies(next -> assertThat(next.followsId()).isEqualTo(yearly.id()));
+        assertThat(restored.reservations.open(finances.accounts.Scope.BUSINESS)).hasSize(1);
     }
 
     /** Run once to (re)create the stored fixture: {@code ./mvnw test -Dtest=BackupServiceTest -Dfinances.writeBackupFixture=src/test/fixtures/backup/format-N.zip}. */

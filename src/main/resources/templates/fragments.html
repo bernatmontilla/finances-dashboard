@@ -9,6 +9,7 @@
     <a th:href="@{/}" th:text="#{nav.overview}"></a>
     <a th:href="@{/accounts}" th:text="#{nav.accounts}"></a>
     <a th:href="@{/transactions}" th:text="#{nav.transactions}"></a>
+    <a th:href="@{/reservations}" th:text="#{nav.reservations}"></a>
     <a th:href="@{/settings}" th:text="#{nav.settings}"></a>
   </nav>
 
@@ -84,6 +85,15 @@
       <span th:text="#{transactions.delivered(${view.date})}"></span>
       <span th:text="#{${view.ageKey}(${view.ageDays})}"></span>
     </th:block>
+  </span>
+
+  <!-- An open reservation (issue #20): its name, due date and what is reserved so far; the overdue flag is a word, not a colour. -->
+  <span th:fragment="reservationDue(row)" class="reservation-due">
+    <strong th:text="${row.name}"></strong>
+    <span class="muted" th:text="#{reservation.due(${row.dueDate})}"></span>
+    <span th:if="${row.overdue}" class="pending" th:text="#{reservation.overdue}"></span>
+    <span th:if="${row.yearly}" class="muted" th:text="#{reservation.yearly.mark}"></span>
+    <span class="amount" th:text="#{reservation.reservedOf(${row.reserved}, ${row.amount})}"></span>
   </span>
 
   <th:block th:fragment="transactions(view, showAccount, path)">

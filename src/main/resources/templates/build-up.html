@@ -44,7 +44,7 @@
       <p th:unless="${page.hasReservations()}" class="muted" th:text="#{buildup.noReservations}"></p>
       <ul class="list buildup" th:if="${page.hasReservations()}">
         <li th:each="reservation : ${page.reservations}">
-          <span th:text="${reservation.label}"></span>
+          <a th:href="@{/reservations}" th:text="${reservation.label}"></a>
           <strong class="amount" th:text="#{buildup.minus(${reservation.amount})}"></strong>
         </li>
       </ul>

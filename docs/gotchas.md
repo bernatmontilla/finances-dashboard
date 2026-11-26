@@ -81,6 +81,10 @@ mention the test here.
   the receipt order or by SQL text order. A record that has a method `isX()` and a component `x` shows the boolean to a template reading
   `.x`: name the method `hasX()`.
 
+- Reservations (#20): "reserved so far" is never stored, it is `finances.money.Reserving` from an anchor (day plus amount); only
+  `ReservationService` writes `reservation` and works out what a reservation stands at today, so a view never adds amounts. Anything that
+  changes a reservation's amount or due date must re-anchor (`docs/decisions/20-reservations.md`).
+
 ## The target machine
 
 - Low memory, possibly shared with other services: the heap cap is real. Stream large result sets.

@@ -272,7 +272,7 @@ class AccountsController {
     }
 
     /** The amount as the owner can type it back: {@code 1234.56}, no grouping, no sign confusion. */
-    private static String plainAmount(Money money) {
+    static String plainAmount(Money money) {
         long absolute = Math.abs(money.cents());
         return (money.isNegative() ? "-" : "") + absolute / 100 + "." + (absolute % 100 < 10 ? "0" : "") + absolute % 100;
     }

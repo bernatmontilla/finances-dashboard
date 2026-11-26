@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title th:text="#{reservations.title}"></title>
+  <link rel="stylesheet" th:href="@{/app.css}">
+</head>
+<body>
+  <main>
+    <nav th:replace="~{fragments :: nav}"></nav>
+    <h1 th:text="#{reservations.title}"></h1>
+    <p class="muted" th:text="#{reservations.intro}"></p>
+    <p th:replace="~{fragments :: error}"></p>
+    <p><a class="button" th:href="@{/reservations/new}" th:text="#{reservations.add}"></a></p>
+    <p th:if="${groups.empty}" th:text="#{reservations.none}"></p>
+    <section th:each="group : ${groups}" th:id="${'scope-' + group.slug}">
+      <h2 th:text="#{${group.labelKey}}"></h2>
+      <p th:if="${group.reserved != null}"><strong class="amount" th:text="#{overview.reserved(${group.reserved})}"></strong></p>
+      <p th:if="${group.noNumber}" class="notice" th:text="#{reservation.noBusinessNumber}"></p>
+      <p th:unless="${group.hasOpen()}" class="muted" th:text="#{reservations.noneOpen}"></p>
+      <ul class="list reservations" th:if="${group.hasOpen()}">
+        <li th:each="row : ${group.open}">
+          <span th:replace="~{fragments :: reservationDue(${row})}"></span>
+          <span class="muted" th:if="${row.hasPerMonth()}" th:text="#{reservation.perMonth(${row.perMonth})}"></span>
+          <span class="muted" th:unless="${row.hasPerMonth()}" th:text="#{reservation.isDue}"></span>
+          <span class="actions">
+            <a th:href="@{/reservations/{id}/edit(id=${row.id})}" th:text="#{reservation.edit}"></a>
+            <form method="post" th:action="@{/reservations/{id}/close(id=${row.id})}" class="inline">
+              <button type="submit" class="secondary" th:text="#{reservation.close}"></button>
+            </form>
+          </span>
+        </li>
+      </ul>
+      <th:block th:if="${group.hasClosed()}">
+        <h3 th:text="#{reservations.closed}"></h3>
+        <ul class="list reservations closed">
+          <li th:each="row : ${group.closed}">
+            <strong th:text="${row.name}"></strong>
+            <span class="muted" th:text="#{reservation.due(${row.dueDate})}"></span>
+            <span th:if="${row.yearly}" class="muted" th:text="#{reservation.yearly.mark}"></span>
+            <span class="amount" th:text="${row.amount}"></span>
+            <span class="muted" th:text="#{reservation.closedOn(${row.closedOn})}"></span>
+            <form method="post" th:action="@{/reservations/{id}/reopen(id=${row.id})}" class="inline">
+              <button type="submit" class="link" th:text="#{reservation.reopen}"></button>
+            </form>
+            <form method="post" th:action="@{/reservations/{id}/remove(id=${row.id})}" class="inline">
+              <button type="submit" class="link" th:text="#{reservation.remove}"></button>
+            </form>
+          </li>
+        </ul>
+      </th:block>
+    </section>
+  </main>
+</body>
+</html>

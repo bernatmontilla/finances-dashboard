@@ -17,6 +17,14 @@
         <div th:replace="~{fragments :: headline(${headline}, true)}"></div>
       </th:block>
     </section>
+    <section th:each="group : ${reservationGroups}" class="reservations-glance">
+      <h2><a th:href="@{/reservations}" th:text="#{overview.reservations(#{${group.labelKey}})}"></a></h2>
+      <p><strong class="amount" th:text="#{overview.reserved(${group.reserved})}"></strong></p>
+      <p th:if="${group.noNumber}" class="muted" th:text="#{reservation.noBusinessNumber}"></p>
+      <ul class="list">
+        <li th:each="row : ${group.open}"><span th:replace="~{fragments :: reservationDue(${row})}"></span></li>
+      </ul>
+    </section>
     <div th:if="${!attention.empty}" class="notice warning" id="attention">
       <span th:text="#{overview.stale(${attention.size()})}"></span>
       <ul class="attention">

@@ -94,7 +94,7 @@ final class AfterTaxViews {
     }
 
     /** The amount with the moment the source calculated it and its age: "today 06:00", "yesterday 06:00" or "3 days ago". */
-    private static AccountViews.BalanceView balance(AfterTaxValue value, LocalDate today, ZoneId zone) {
+    static AccountViews.BalanceView balance(AfterTaxValue value, LocalDate today, ZoneId zone) {
         LocalDateTime moment = LocalDateTime.ofInstant(value.asOf(), zone);
         long days = Math.max(0, ChronoUnit.DAYS.between(moment.toLocalDate(), today));
         String amount = value.available().format();

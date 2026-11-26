@@ -69,11 +69,32 @@ class AfterTaxNotConfiguredPagesTest {
 
         HttpResponse<String> syncNow = post("/sync");
         assertThat(syncNow.statusCode()).isEqualTo(302);
-        assertThat(get("/").body()).doesNotContain("After-tax").doesNotContain("Business available");
+        // Issue #19 puts the two headline numbers on the overview: Business available is there as a line that says why there is
+        // no number (it used to be absent), and it shows no amount.
+        String overview = get("/").body();
+        assertThat(overview).doesNotContain("After-tax").contains("Business available")
+                .contains("Not shown: no after-tax source is configured.").doesNotContain("€");
 
         HttpResponse<String> test = post("/settings/after-tax/test");
         assertThat(test.statusCode()).isEqualTo(302);
         assertThat(test.headers().firstValue("Location").orElseThrow()).endsWith("/settings");
         assertThat(get("/settings").statusCode()).isEqualTo(200);
+    }
+
+    @Test
+    void withoutASourceTheBusinessNumberIsOneLineWithWhyAndWhereToSetItUpNeverAZero() throws Exception {
+        String overview = get("/").body();
+
+        int at = overview.indexOf(">Business available<");
+        assertThat(at).isGreaterThan(0);
+        String headline = overview.substring(overview.lastIndexOf("<div class=\"headline\">", at));
+        assertThat(headline).contains("Not shown: no after-tax source is configured.").contains("finances.outbound.after-tax.url")
+                .contains("href=\"/settings\"").doesNotContain("headline-amount").doesNotContain("€");
+        assertThat(overview).as("no accounts: no private number either, and no zero").contains("there is no private current account yet")
+                .doesNotContain("€0.00");
+
+        HttpResponse<String> buildUp = get("/build-up/business");
+        assertThat(buildUp.statusCode()).isEqualTo(200);
+        assertThat(buildUp.body()).contains("Not shown: no after-tax source is configured.").doesNotContain("buildup-total");
     }
 }

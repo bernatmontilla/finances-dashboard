@@ -76,6 +76,11 @@ mention the test here.
   runs on its own thread and flag, never under `BankSyncService`'s lock. A message containing an apostrophe is HTML-escaped in a page, so
   a test that looks for the text of a message must avoid it.
 
+- Headline numbers (#19): the definitions of Private free to spend and Business available are `finances.money.BuildUp` only; a page, a
+  template or a view never adds, subtracts or compares amounts. The after-tax "current" value is picked by the `as_of` instant, never by
+  the receipt order or by SQL text order. A record that has a method `isX()` and a component `x` shows the boolean to a template reading
+  `.x`: name the method `hasX()`.
+
 ## The target machine
 
 - Low memory, possibly shared with other services: the heap cap is real. Stream large result sets.

@@ -75,3 +75,5 @@ minutes ahead is refused like any other invalid answer: the last good value stay
 Also applied by the dashboard, without changing what a source must send: the answer is read up to 64 KiB (a larger body is
 refused), the exchange as a whole takes at most 10 seconds, a redirect is not followed and counts as a status other than
 200, and a duplicate key in the JSON object refuses the answer.
+
+A valid answer whose `as_of` is older than the `as_of` of the value already stored is kept in the history but does not replace the value shown, and the fetch is recorded as having gone well with a note that the answer was older than what is known. An amount beyond the safe integer range, above 2^53 - 1 in either direction, is refused like any other invalid answer (`not_an_integer`).

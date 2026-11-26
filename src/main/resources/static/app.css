@@ -107,3 +107,26 @@ ul.attention li { display: inline; }
 ul.attention { font-weight: 400; }
 ul.attention li:not(:last-child)::after { content: ","; }
 .notice > p:first-child { margin-top: 0; }
+
+/* The two headline numbers (issue #19): side by side, also at 360 px; a long amount wraps inside its own column. */
+.headlines { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; margin: 1rem 0; }
+.headlines.single { grid-template-columns: minmax(0, 1fr); }
+.headline { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.75rem; min-width: 0; }
+.headline-title { font-size: 1rem; margin: 0 0 0.25rem; }
+.headline-amount { font-size: clamp(1.375rem, 7vw, 2.25rem); font-weight: 700; line-height: 1.15; margin: 0 0 0.25rem; overflow-wrap: anywhere; }
+.headline-amount a { text-decoration: none; }
+.headline-amount.negative, .buildup-total .negative { color: var(--danger); }
+.headline-negative { margin: 0; font-weight: 600; color: var(--danger); }
+.headline-age { margin: 0 0 0.5rem; font-size: 0.875rem; }
+.headline-hidden { margin: 0 0 0.5rem; }
+.headline-stale .stale-parts { margin: 0.25rem 0 0; padding-left: 1.25rem; font-weight: 400; }
+.headline-stale > div { margin-top: 0.25rem; font-size: 0.875rem; }
+.headline-stale > div > p { margin: 0; }
+@media (max-width: 30rem) {
+  .headlines { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.5rem; }
+  .headline { padding: 0.5rem; }
+}
+.buildup .balance { display: block; }
+.list.nested { margin-left: 1rem; }
+.buildup-total { display: flex; justify-content: space-between; gap: 0.75rem; font-size: 1.125rem; border-top: 2px solid var(--line); padding-top: 0.5rem; }
+.notcounted { opacity: 0.85; }

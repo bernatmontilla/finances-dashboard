@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title th:text="#{buildup.title(#{${page.headline.titleKey}})}"></title>
+  <link rel="stylesheet" th:href="@{/app.css}">
+</head>
+<body>
+  <main>
+    <nav th:replace="~{fragments :: nav}"></nav>
+    <h1 th:text="#{buildup.title(#{${page.headline.titleKey}})}"></h1>
+    <p><a th:href="@{/}" th:text="#{buildup.back}"></a></p>
+    <p class="muted" th:text="${page.headline.slug == 'private'} ? #{buildup.private.intro} : #{buildup.business.intro}"></p>
+    <section class="headlines single">
+      <div th:replace="~{fragments :: headline(${page.headline}, false)}"></div>
+    </section>
+
+    <section th:if="${page.hasLines()}">
+      <h2 th:text="#{buildup.counted}"></h2>
+      <ul class="list buildup">
+        <li th:each="line : ${page.lines}">
+          <a th:if="${line.linked()}" th:href="@{/accounts/{id}(id=${line.accountId})}" th:text="${line.name}"></a>
+          <strong th:if="${!line.linked() and line.hasName()}" th:text="${line.name}"></strong>
+          <strong th:if="${!line.hasName()}" th:text="#{${line.nameKey}}"></strong>
+          <span th:replace="~{fragments :: balance(${line.balance}, false)}"></span>
+          <th:block th:replace="~{fragments :: stale(${line.stale})}"></th:block>
+        </li>
+      </ul>
+      <th:block th:if="${page.hasAfterTax()}">
+        <p th:if="${page.afterTax.mismatch}" class="notice" th:text="#{aftertax.mismatch}"></p>
+        <p th:if="${page.afterTax.hasGross()}" class="muted" th:text="#{aftertax.gross(${page.afterTax.gross})}"></p>
+        <p th:if="${page.afterTax.hasReserved()}" class="muted" th:text="#{aftertax.reserved}"></p>
+        <ul class="list nested" th:if="${page.afterTax.hasReserved()}">
+          <li th:each="line : ${page.afterTax.reserved}">
+            <span th:text="${line.label}"></span>
+            <span class="muted" th:text="${line.amount}"></span>
+          </li>
+        </ul>
+      </th:block>
+
+      <h2 th:text="#{buildup.reservations}"></h2>
+      <p th:unless="${page.hasReservations()}" class="muted" th:text="#{buildup.noReservations}"></p>
+      <ul class="list buildup" th:if="${page.hasReservations()}">
+        <li th:each="reservation : ${page.reservations}">
+          <span th:text="${reservation.label}"></span>
+          <strong class="amount" th:text="#{buildup.minus(${reservation.amount})}"></strong>
+        </li>
+      </ul>
+      <p th:if="${page.hasReservations()}" class="muted" th:text="#{buildup.reserved(${page.reserved})}"></p>
+
+      <p class="buildup-total">
+        <span th:text="#{buildup.total}"></span>
+        <strong class="amount" th:classappend="${page.headline.negative} ? 'negative'" th:text="${page.total}"></strong>
+      </p>
+    </section>
+
+    <section th:if="${page.hasNotCounted()}">
+      <h2 th:text="#{buildup.notCounted}"></h2>
+      <p class="muted" th:text="#{buildup.notCounted.intro}"></p>
+      <ul class="list buildup notcounted">
+        <li th:each="line : ${page.notCounted}">
+          <a th:href="@{/accounts/{id}(id=${line.accountId})}" th:text="${line.name}"></a>
+          <span th:replace="~{fragments :: balance(${line.balance}, false)}"></span>
+          <th:block th:replace="~{fragments :: stale(${line.stale})}"></th:block>
+        </li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

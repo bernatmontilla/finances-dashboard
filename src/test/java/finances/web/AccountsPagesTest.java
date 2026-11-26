@@ -252,7 +252,7 @@ class AccountsPagesTest {
                 HttpResponse.BodyHandlers.ofString());
 
         assertThat(response.statusCode()).isEqualTo(404);
-        assertThat(response.body()).contains("Page not found").contains("Back to the accounts").doesNotContain("\"timestamp\"");
+        assertThat(response.body()).contains("Page not found").contains("Back to the overview").doesNotContain("\"timestamp\"");
     }
 
     @Test

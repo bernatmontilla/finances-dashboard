@@ -52,6 +52,16 @@ public class SessionFiles {
         return folder.resolve("enable-banking-session-" + consentId + ".tag");
     }
 
+    /** A session file for a consent without a tag (one made before tags existed): no companion file, and a leftover one is removed. */
+    void write(long consentId, String sessionId) {
+        try {
+            Files.deleteIfExists(tagFileOf(consentId));
+        } catch (IOException e) {
+            throw new UncheckedIOException("The session file could not be written.", new IOException("write failed"));
+        }
+        write(consentId, sessionId, null);
+    }
+
     /**
      * Written whole or not at all: a temporary file first, then moved into place. The tag goes first, so a session file
      * is never in place without its tag.
@@ -59,7 +69,9 @@ public class SessionFiles {
     void write(long consentId, String sessionId, String tag) {
         try {
             Files.createDirectories(folder);
-            put(tagFileOf(consentId), tag);
+            if (tag != null) {
+                put(tagFileOf(consentId), tag);
+            }
             put(fileOf(consentId), sessionId);
         } catch (IOException e) {
             // The cause is dropped: nothing about the file's content may travel into a message.

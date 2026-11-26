@@ -57,6 +57,16 @@ is judged by its sync, a manual or CSV account by the date of its newest balance
 The overview says so in one line at the top, and announces a bank consent that ends within 14 days with a
 *Renew* button before it makes anything stale. Archived accounts are not counted.
 
+### Reservations or fixed costs?
+
+Both are lists kept by hand, and both stay out of each other's way. A **reservation** builds up towards **one**
+payment (an insurance bill in December, a new laptop): what is reserved so far is held back from the headline number of its
+scope. A **fixed cost** **repeats** (rent, a subscription, a quarterly premium): the *Fixed costs* page gives its monthly and yearly
+totals per scope and says which of them are still to come this month, and the overview shows that total beside the headline
+numbers, never subtracted from them. For the current month a fixed cost is *paid* once you mark it as paid, and *still to come*
+otherwise; a yearly one is simply "next due" in the other months. Use a fixed cost for what comes back, and a reservation for the
+one big bill you can see coming, not both for the same expense.
+
 `GET /health` answers `200` with `{"status":"ok","version":"…"}` when the database is reachable, and `503` with `{"status":"unavailable","version":"…"}` otherwise.
 
 One test class while working: `./mvnw -q test -Dtest=ClassName`.

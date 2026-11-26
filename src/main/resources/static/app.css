@@ -132,3 +132,9 @@ ul.attention li:not(:last-child)::after { content: ","; }
 .notcounted { opacity: 0.85; }
 
 .reservation-due { display: flex; flex-wrap: wrap; gap: 0 0.75rem; }
+
+/* Fixed costs (issue #21): at phone width the name, the amount and the dates each sit on their own line, so the amount is easy to find. */
+.fixed-costs li > .fc-name, .fixed-costs li > .fc-amount, .fixed-costs li > .balance { display: block; }
+.fixed-costs li > .actions { margin-top: 0.25rem; }
+.fixed-costs-glance details > summary { cursor: pointer; font-weight: 600; }
+.fixed-costs-glance details > summary::marker { color: var(--accent, currentColor); }

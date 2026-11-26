@@ -3,6 +3,7 @@ package finances.backup;
 import finances.accounts.AccountService;
 import finances.accounts.DeliveredTransaction;
 import finances.accounts.Kind;
+import finances.accounts.FixedCostService;
 import finances.accounts.ReservationService;
 import finances.accounts.Scope;
 import finances.accounts.Source;
@@ -36,6 +37,7 @@ final class BackupFixtures {
     final AccountService accounts;
     final TransactionService transactions;
     final ReservationService reservations;
+    final FixedCostService fixedCosts;
 
     private BackupFixtures(Path folder, String target) {
         this.folder = folder;
@@ -54,6 +56,7 @@ final class BackupFixtures {
         accounts = new AccountService(jdbc, CLOCK);
         transactions = new TransactionService(jdbc, CLOCK, new DataSourceTransactionManager(dataSource));
         reservations = new ReservationService(jdbc, CLOCK, accounts, transactions);
+        fixedCosts = new FixedCostService(jdbc, CLOCK, accounts);
     }
 
     static BackupFixtures open(Path folder) {
@@ -104,6 +107,14 @@ final class BackupFixtures {
     String reservationRows() {
         return jdbc.sql("select * from reservation order by id").query().listOfRows().stream().map(Object::toString)
                 .collect(Collectors.joining("\n"));
+    }
+
+    /** Every fixed cost row and every tick, as text, so two databases can be compared exactly. */
+    String fixedCostRows() {
+        return jdbc.sql("select * from fixed_cost order by id").query().listOfRows().stream().map(Object::toString)
+                .collect(Collectors.joining("\n")) + "\n"
+                + jdbc.sql("select * from fixed_cost_paid order by fixed_cost_id, month").query().listOfRows().stream()
+                        .map(Object::toString).collect(Collectors.joining("\n"));
     }
 
     long count(String table) {

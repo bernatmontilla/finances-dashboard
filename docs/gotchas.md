@@ -87,6 +87,11 @@ mention the test here.
 - A reservation closed against a payment (#51) links only a **booked** transaction (a bank sync deletes pending rows); a closed one is never
   removed, reopen it first (`docs/decisions/51-close-against-transaction.md`).
 
+- Fixed costs (#21): when a charge falls is `finances.money.ChargeSchedule` only (counted from `first_due`, never chained); only
+  `FixedCostService` writes `fixed_cost` and `fixed_cost_paid`, and a tick is per month so edits never lose it. A Thymeleaf `th:each`
+  and `th:replace` on one element do not combine (the replace wins): wrap the fragment in a `th:block th:each`
+  (`docs/decisions/21-fixed-costs.md`).
+
 ## The target machine
 
 - Low memory, possibly shared with other services: the heap cap is real. Stream large result sets.

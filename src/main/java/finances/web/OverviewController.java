@@ -3,6 +3,7 @@ package finances.web;
 import finances.accounts.AccountService;
 import finances.accounts.AccountSummary;
 import finances.accounts.BankBalanceInfo;
+import finances.accounts.FixedCostService;
 import finances.accounts.ReservationService;
 import finances.accounts.Scope;
 import finances.money.Freshness;
@@ -36,15 +37,17 @@ class OverviewController {
     private final FreshnessService freshness;
     private final HeadlineService headlines;
     private final ReservationService reservations;
+    private final FixedCostService fixedCosts;
 
     OverviewController(BuildProperties build, AccountService accounts, BankStatus bank, FreshnessService freshness,
-            HeadlineService headlines, ReservationService reservations) {
+            HeadlineService headlines, ReservationService reservations, FixedCostService fixedCosts) {
         this.build = build;
         this.accounts = accounts;
         this.bank = bank;
         this.freshness = freshness;
         this.headlines = headlines;
         this.reservations = reservations;
+        this.fixedCosts = fixedCosts;
     }
 
     /** An account whose figure may be out of date, as the line at the top links to it. */
@@ -77,6 +80,7 @@ class OverviewController {
         Map<Long, BankBalanceInfo> banks = accounts.latestBankBalances();
         model.addAttribute("headlines", HeadlineViews.headlines(headlines.headlines(active, stale), accounts.today(), accounts.zone(), banks));
         model.addAttribute("reservationGroups", reservationGroups());
+        model.addAttribute("fixedCostsComing", fixedCostsComing());
         model.addAttribute("groups", AccountViews.groups(active, accounts.today(), Map.of(), accounts.zone(), banks, stale));
         model.addAttribute("attention", active.stream().filter(s -> stale.containsKey(s.account().id()))
                 .map(s -> new AttentionRow(s.account().id(), s.account().name())).toList());
@@ -93,6 +97,18 @@ class OverviewController {
             var summary = reservations.summary(scope, NEXT_DUE);
             if (summary.hasOpen()) {
                 groups.add(ReservationViews.overview(scope, summary, source));
+            }
+        }
+        return groups;
+    }
+
+    /** Per scope with a fixed cost still to come this month: the total and each one with its expected date (issue #21). */
+    private List<FixedCostViews.Coming> fixedCostsComing() {
+        List<FixedCostViews.Coming> groups = new java.util.ArrayList<>();
+        for (Scope scope : Scope.values()) {
+            FixedCostViews.Coming coming = FixedCostViews.coming(scope, fixedCosts.summary(scope), id -> null);
+            if (coming != null) {
+                groups.add(coming);
             }
         }
         return groups;

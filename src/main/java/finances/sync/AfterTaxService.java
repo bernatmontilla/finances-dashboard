@@ -182,7 +182,12 @@ public class AfterTaxService {
                     if (current.isPresent() && value.asOf().isBefore(current.get().asOf())) {
                         store.setReason(fetchId, AfterTaxReason.OLDER_THAN_KNOWN.code());
                     }
-                    if (!store.holds(value)) {
+                    // Nothing is stored twice (hard rule 10): not the answer that is already the current one, and not an older
+                    // answer that is already in the history. An answer for the current moment that the source went back to
+                    // is stored again, because the one received last is the one shown.
+                    boolean sameAsCurrent = current.isPresent() && current.get().sameAnswerAs(value);
+                    boolean olderAndHeld = current.isPresent() && value.asOf().isBefore(current.get().asOf()) && store.holds(value);
+                    if (!sameAsCurrent && !olderAndHeld) {
                         store.insertValue(value);
                     }
                 }

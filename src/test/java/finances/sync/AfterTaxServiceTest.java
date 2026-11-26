@@ -287,6 +287,23 @@ class AfterTaxServiceTest {
     }
 
     @Test
+    void aSourceThatGoesBackToAnEarlierAnswerForTheSameMomentShowsThatLatestAnswer() {
+        service.test();
+        source.answer(FakeAfterTaxSource.valid(Instant.parse("2026-11-26T06:00:00Z")).replace("1234500", "1000000"));
+        h.clock.set(NOW.plusSeconds(60));
+        service.test();
+        assertThat(service.current().orElseThrow().availableCents()).isEqualTo(1_000_000);
+
+        source.answer(validAsOf("2026-11-26T06:00:00Z"));
+        h.clock.set(NOW.plusSeconds(120));
+        service.test();
+
+        assertThat(service.current().orElseThrow().availableCents()).as("what the source says now").isEqualTo(1_234_500);
+        service.test();
+        assertThat(service.history()).as("the same answer again adds nothing").hasSize(3);
+    }
+
+    @Test
     void anOlderAnswerReceivedTwiceIsStoredOnce() {
         service.test();
         source.answer(validAsOf("2026-11-26T05:00:00Z"));

@@ -50,8 +50,11 @@ decides "stale") and `18-after-tax-source.md` (the source and its value).
   ageing from its own `as_of` into `SOURCE_OLD`. The duplicate check now asks whether any stored value is the same answer
   (`AfterTaxStore.holds`), not only the newest, or an older answer received twice would be stored twice (hard rule 10). This changes what
   #18 decided ("the newest received value is current"); `theNewestReceivedValueIsTheCurrentOneEvenWhenItsMomentIsOlder` and the "old"
-  step of `AfterTaxPagesTest` changed with it. The V7 comment saying "the current value is the most recently received row" stays, as a
-  merged migration is never edited. A sentence in the contract's clarification section says it; the owner decides on it at merge.
+  step of `AfterTaxPagesTest` changed with it. A third existing assertion changed because the spec puts both numbers on the overview:
+  `AfterTaxNotConfiguredPagesTest` no longer expects "Business available" to be absent without a source (it is there as a line saying
+  why there is no number, with no amount). The V7 comment saying "the current value is the most recently received row" stays, as a
+  merged migration is never edited. A value is stored again only when it is not the current answer and not an older answer already in
+  the history, so a source that goes back to an earlier answer for the same moment shows that latest answer, and nothing else is stored twice. A sentence in the contract's clarification section says it; the owner decides on it at merge.
 - **A busy database.** When neither the fetch record nor the `store_failed` fallback can be written, `AfterTaxService` keeps the failure
   in a `volatile` field (`lastFailure()` returns it first) until any fetch row is written. Memory only: a restart drops it (issue #49).
 - **Unknown stale reasons.** `AccountViews.stale` maps the detail of a failed sync and of a failed fetch through an allow-list (the

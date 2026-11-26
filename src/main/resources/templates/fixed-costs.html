@@ -28,6 +28,7 @@
       </ul>
       <th:block th:if="${!group.paused.empty}">
         <h3 th:text="#{fixedcosts.paused}"></h3>
+        <p class="muted" th:text="#{fixedcosts.pausedNote}"></p>
         <ul class="list fixed-costs">
           <th:block th:each="row : ${group.paused}"><li th:replace="~{fragments :: fixedCost(${row})}"></li></th:block>
         </ul>

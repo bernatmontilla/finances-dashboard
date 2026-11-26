@@ -28,21 +28,24 @@ paused, ended or has no charge this month. A tick for a month that passed stays 
 ## What "still to come" means without matching
 
 A fixed cost with a charge this month and no tick is still to come, **also when its charge date has already passed**: without matching
-nothing else says it was paid, and "did not arrive" belongs to #64. The page shows the expected date. A fixed cost with no charge this
+nothing else says it was paid, and "did not arrive" belongs to #64. The page and the overview show the expected date and, once it has passed, the words "date passed, not marked as paid" (`FixedCostMonth.overdue`), so the total is not read as more certain than it is. A fixed cost with no charge this
 month is neither paid nor to come; the page shows when it is next due (the first charge after this month).
 
 ## Totals
 
-Per scope, over the running fixed costs (not paused, not ended on or before today): per year = the sum of `amount * (12 / months)`,
+Per scope, over the running fixed costs (not paused, not ended): per year = the sum of `amount * (12 / months)`,
 exact; per month = per year / 12 **rounded up** to whole cents, as `Reserving` rounds, so a cost is never shown lower than it is.
 Paused and ended ones are listed but never added.
 
 ## Pause, end, resume, remove
 
 - Pause sets `paused_at`; resume clears it. End sets `ended_on` (the given date, today by default; not before `first_due`).
-- A fixed cost is **ended** once `ended_on` is today or earlier: it is listed under *Ended*, read-only (edit, pause, remove and tick are
+- `ended_on` is the last day a charge may fall (so a charge on the end date itself is still expected and can be ticked). A fixed cost is
+  **ended** once `ended_on` is before today (the spec said "on or before today"; changed after the risk check, because the two
+  readings of the end date disagreed): it is listed under *Ended*, read-only (edit, pause, remove and tick are
   refused), and not counted. An end date still ahead leaves it running until then; a charge after the end date is never expected.
-  Resume clears both `paused_at` and `ended_on`.
+  Resume clears `paused_at`, and `ended_on` only when the fixed cost has ended (an end date still ahead stays). The end form has no date
+  field: it ends today; the service and the POST take a date.
 - Remove is only for a fixed cost that has not ended.
 - Editing an account link: an account that was archived after it was linked stays linked; a new account must exist, be in use and be
   of the same scope.

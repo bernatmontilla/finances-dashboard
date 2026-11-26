@@ -18,9 +18,12 @@ public record FixedCost(long id, String name, Scope scope, Money amount, Rhythm 
         return pausedAt != null;
     }
 
-    /** Ended on or before {@code today}: it is read-only and no longer counts. An end date still ahead leaves it running. */
+    /**
+     * Ended before {@code today}: it is read-only and no longer counts. {@code endedOn} is the last day it may be charged, so on that
+     * day a charge still falls (and can be ticked); an end date still ahead leaves it running.
+     */
     public boolean isEnded(LocalDate today) {
-        return endedOn != null && !endedOn.isAfter(today);
+        return endedOn != null && endedOn.isBefore(today);
     }
 
     public ChargeSchedule schedule() {

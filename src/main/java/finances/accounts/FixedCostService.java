@@ -90,7 +90,7 @@ public class FixedCostService {
         int running = 0;
         for (FixedCostMonth month : all) {
             FixedCost cost = month.cost();
-            if (cost.isPaused() || cost.endedOn() != null && !cost.endedOn().isAfter(today)) {
+            if (cost.isPaused() || cost.isEnded(today)) {
                 continue;
             }
             running++;
@@ -122,7 +122,8 @@ public class FixedCostService {
         } else {
             status = FixedCostMonth.Status.NOT_THIS_MONTH;
         }
-        return new FixedCostMonth(cost, status, expected, next);
+        boolean overdue = status == FixedCostMonth.Status.STILL_TO_COME && expected.orElseThrow().isBefore(today);
+        return new FixedCostMonth(cost, status, expected, next, overdue);
     }
 
     private boolean isTicked(long id, YearMonth month) {
@@ -205,10 +206,13 @@ public class FixedCostService {
     @Transactional
     public FixedCost resume(long id) {
         FixedCost current = get(id);
-        if (!current.isPaused() && current.endedOn() == null) {
+        boolean ended = current.isEnded(accounts.today());
+        if (!current.isPaused() && !ended) {
             throw new FixedCostException(Reason.NOT_PAUSED_OR_ENDED);
         }
-        jdbc.sql("update fixed_cost set paused_at = null, ended_on = null, changed_at = ? where id = ?").params(now(), id).update();
+        // An end date still ahead is the owner's: it is only cleared when the fixed cost has actually ended.
+        jdbc.sql("update fixed_cost set paused_at = null, ended_on = case when ? then null else ended_on end, changed_at = ? where id = ?")
+                .params(ended ? 1 : 0, now(), id).update();
         return get(id);
     }
 

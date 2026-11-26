@@ -23,7 +23,7 @@ final class FixedCostViews {
      * {@code expected} is this month's charge date and {@code nextDue} the first charge after this month (both null when none).
      */
     record Row(long id, String name, String amount, String rhythmKey, String firstDue, String counterparty, String account,
-            String status, String expected, String nextDue, String endedOn) {
+            String status, String expected, String nextDue, String endedOn, boolean overdue) {
 
         public boolean hasCounterparty() {
             return counterparty != null;
@@ -84,7 +84,7 @@ final class FixedCostViews {
         return new Row(cost.id(), cost.name(), cost.amount().format(), "rhythm." + cost.rhythm().code(), cost.firstDue().toString(),
                 cost.counterpartyName(), cost.accountId() == null ? null : accountName.apply(cost.accountId()),
                 month.status().name().toLowerCase(Locale.ROOT), month.expected().map(Object::toString).orElse(null),
-                month.nextDue().map(Object::toString).orElse(null), cost.endedOn() == null ? null : cost.endedOn().toString());
+                month.nextDue().map(Object::toString).orElse(null), cost.endedOn() == null ? null : cost.endedOn().toString(), month.overdue());
     }
 
     static Group group(Scope scope, FixedCostSummary summary, List<FixedCostMonth> months, LongFunction<String> accountName) {

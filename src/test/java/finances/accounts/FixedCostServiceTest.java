@@ -226,6 +226,48 @@ class FixedCostServiceTest {
     }
 
     @Test
+    void aCostEndedTodayStillHasTodaysChargeToCome() {
+        FixedCost rent = rent(); // charged on the 15th
+        clock.set(date("2026-06-15"));
+
+        fixedCosts.end(rent.id(), null);
+
+        assertThat(status(rent)).as("the end date is the last day it may be charged").isEqualTo(Status.STILL_TO_COME);
+        fixedCosts.tick(rent.id());
+        assertThat(status(rent)).isEqualTo(Status.PAID);
+        clock.set(date("2026-06-16"));
+        assertThat(status(rent)).isEqualTo(Status.ENDED);
+        refuse(Reason.ENDED, () -> fixedCosts.tick(rent.id()));
+    }
+
+    @Test
+    void aChargeWhoseDateHasPassedWithoutATickIsFlaggedOverdueUntilTicked() {
+        FixedCost rent = rent(); // charged on the 15th
+        clock.set(date("2026-06-15"));
+        assertThat(fixedCosts.month(rent.id()).overdue()).as("due today is not late").isFalse();
+        clock.set(date("2026-06-16"));
+        assertThat(fixedCosts.month(rent.id()).overdue()).isTrue();
+        assertThat(fixedCosts.month(rent.id()).status()).isEqualTo(Status.STILL_TO_COME);
+
+        fixedCosts.tick(rent.id());
+
+        assertThat(fixedCosts.month(rent.id()).overdue()).isFalse();
+    }
+
+    @Test
+    void resumingAPausedCostKeepsAnEndDateStillAheadAndResumingARunningOneIsRefused() {
+        FixedCost rent = rent();
+        fixedCosts.end(rent.id(), date("2026-12-31"));
+        refuse(Reason.NOT_PAUSED_OR_ENDED, () -> fixedCosts.resume(rent.id()));
+        fixedCosts.pause(rent.id());
+
+        fixedCosts.resume(rent.id());
+
+        assertThat(fixedCosts.get(rent.id()).endedOn()).isEqualTo(date("2026-12-31"));
+        assertThat(fixedCosts.get(rent.id()).isPaused()).isFalse();
+    }
+
+    @Test
     void theOnesStillToComeAreOrderedByExpectedDate() {
         add("Example Telecom", Scope.PRIVATE, "10.00", Rhythm.MONTHLY, "2026-01-25");
         add("Example Gym", Scope.PRIVATE, "10.00", Rhythm.MONTHLY, "2026-01-05");
@@ -256,6 +298,8 @@ class FixedCostServiceTest {
         FixedCost rent = rent();
         fixedCosts.end(rent.id(), null);
         assertThat(fixedCosts.get(rent.id()).endedOn()).isEqualTo(date("2026-06-01"));
+        clock.set(date("2026-06-02"));
+        assertThat(status(rent)).isEqualTo(Status.ENDED);
 
         fixedCosts.resume(rent.id());
 

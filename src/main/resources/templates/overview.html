@@ -32,9 +32,11 @@
           <li th:each="row : ${group.rows}">
             <strong th:text="${row.name}"></strong>
             <span class="amount" th:text="${row.amount}"></span>
-            <span class="muted" th:text="#{fixedcosts.expected(${row.expected})}"></span>
+            <span class="muted nowrap" th:text="#{fixedcosts.expected(${row.expected})}"></span>
+            <span class="pending" th:if="${row.overdue}" th:text="#{fixedcosts.overdue}"></span>
           </li>
         </ul>
+        <p class="muted" th:text="#{overview.fixedCostsNote}"></p>
         <p><a th:href="@{/fixed-costs}" th:text="#{overview.fixedCostsAll}"></a></p>
       </details>
     </section>

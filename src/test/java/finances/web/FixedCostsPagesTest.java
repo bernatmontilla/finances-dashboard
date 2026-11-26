@@ -180,9 +180,11 @@ class FixedCostsPagesTest {
         assertThat(get("/").body()).contains("still to come this month");
 
         // End, then resume after the end.
-        assertThat(post("/fixed-costs/" + id + "/end", Map.of("endedOn", today().toString())).statusCode()).isEqualTo(302);
+        assertThat(post("/fixed-costs/" + id, form("Example Landlord rent", "private", "1.300,00", "monthly", today().minusMonths(1).toString()))
+                .statusCode()).isEqualTo(302);
+        assertThat(post("/fixed-costs/" + id + "/end", Map.of("endedOn", today().minusDays(1).toString())).statusCode()).isEqualTo(302);
         String ended = get("/fixed-costs").body();
-        assertThat(ended).contains("Ended").contains("ended " + today()).doesNotContain("/fixed-costs/" + id + "/edit");
+        assertThat(ended).contains("Ended").contains("since " + today().minusDays(1)).doesNotContain("/fixed-costs/" + id + "/edit");
         assertThat(get("/fixed-costs/" + id + "/edit").statusCode()).as("an ended one is not edited").isEqualTo(404);
         assertThat(post("/fixed-costs/" + id + "/resume", Map.of()).statusCode()).isEqualTo(302);
         assertThat(get("/fixed-costs").body()).contains("Still to come this month");

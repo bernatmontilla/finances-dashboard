@@ -90,7 +90,7 @@
   <!-- An open reservation (issue #20): its name, due date and what is reserved so far; the overdue flag is a word, not a colour. -->
   <span th:fragment="reservationDue(row)" class="reservation-due">
     <strong th:text="${row.name}"></strong>
-    <span class="muted" th:text="#{reservation.due(${row.dueDate})}"></span>
+    <span class="muted nowrap" th:text="#{reservation.due(${row.dueDate})}"></span>
     <span th:if="${row.overdue}" class="pending" th:text="#{reservation.overdue}"></span>
     <span th:if="${row.yearly}" class="muted" th:text="#{reservation.yearly.mark}"></span>
     <span class="amount" th:text="#{reservation.reservedOf(${row.reserved}, ${row.amount})}"></span>

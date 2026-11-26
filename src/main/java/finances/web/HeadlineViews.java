@@ -73,7 +73,8 @@ final class HeadlineViews {
         }
     }
 
-    record ReservationLine(String label, String amount) {
+    /** A reservation line; {@code zero} lines are shown without a minus sign (nothing is held back yet). */
+    record ReservationLine(String label, String amount, boolean zero) {
     }
 
     /** A build-up page: the headline, every counted line, the reservations, and the total; and what is listed but not counted. */
@@ -190,7 +191,7 @@ final class HeadlineViews {
     }
 
     private static List<ReservationLine> reservations(BuildUp.Result result) {
-        return result.reservations().stream().map(r -> new ReservationLine(r.label(), r.amount().format())).toList();
+        return result.reservations().stream().map(r -> new ReservationLine(r.label(), r.amount().format(), r.amount().isZero())).toList();
     }
 
     private static String amount(Money money) {

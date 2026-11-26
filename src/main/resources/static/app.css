@@ -130,3 +130,5 @@ ul.attention li:not(:last-child)::after { content: ","; }
 .list.nested { margin-left: 1rem; }
 .buildup-total { display: flex; justify-content: space-between; gap: 0.75rem; font-size: 1.125rem; border-top: 2px solid var(--line); padding-top: 0.5rem; }
 .notcounted { opacity: 0.85; }
+
+.reservation-due { display: flex; flex-wrap: wrap; gap: 0 0.75rem; }

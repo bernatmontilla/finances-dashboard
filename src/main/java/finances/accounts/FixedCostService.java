@@ -519,8 +519,9 @@ public class FixedCostService {
     // ----- flags and the owner's answers to them (issue #22)
 
     /** What a flag is worked out from, read once per call: the facts of the occurrences around today. */
-    private record Context(LocalDate today, ZoneId zone, Map<Long, Instant> delivered, Map<Scope, List<Long>> inUse, Set<String> ticked,
-            Set<String> unticked, Set<String> skipped, Map<String, Long> links, Set<String> kept) {
+    private record Context(LocalDate today, ZoneId zone, Map<Long, Instant> delivered, Map<Long, LocalDate> newestBooked,
+            Map<Scope, List<Long>> inUse, Set<String> ticked, Set<String> unticked, Set<String> skipped, Map<String, Long> links,
+            Set<String> kept) {
     }
 
     private Context context() {
@@ -535,7 +536,10 @@ public class FixedCostService {
                 .query((rs, row) -> links.put(rs.getString(1), rs.getLong(2))).list();
         Set<String> kept = new HashSet<>(jdbc.sql("select fixed_cost_id || ' ' || transaction_id from fixed_cost_price_kept")
                 .query(String.class).list());
-        return new Context(today, accounts.zone(), transactions.lastDelivered(), inUse, keysFrom("fixed_cost_paid", from),
+        Map<Long, LocalDate> newestBooked = new HashMap<>();
+        jdbc.sql("select account_id, max(booking_date) from transactions where status = 'booked' group by account_id")
+                .query((rs, row) -> newestBooked.put(rs.getLong(1), LocalDate.parse(rs.getString(2)))).list();
+        return new Context(today, accounts.zone(), transactions.lastDelivered(), newestBooked, inUse, keysFrom("fixed_cost_paid", from),
                 keysFrom("fixed_cost_unpaid", from), keysFrom("fixed_cost_skipped", from), links, kept);
     }
 
@@ -655,7 +659,10 @@ public class FixedCostService {
         return Optional.empty();
     }
 
-    /** True when every account the fixed cost rests on had a delivery on a day after {@code day}; false when there are none. */
+    /**
+     * True when every account the fixed cost rests on had a delivery on a day after {@code day} and has a booked transaction dated
+     * after {@code day}: a late import of old transactions says nothing about the days since (issue #71). False when there are none.
+     */
     private static boolean deliveredSince(FixedCost cost, Context context, LocalDate day) {
         List<Long> involved = cost.accountId() != null ? List.of(cost.accountId()) : context.inUse().getOrDefault(cost.scope(), List.of());
         if (involved.isEmpty()) {
@@ -663,7 +670,8 @@ public class FixedCostService {
         }
         for (long accountId : involved) {
             Instant at = context.delivered().get(accountId);
-            if (at == null || !at.atZone(context.zone()).toLocalDate().isAfter(day)) {
+            LocalDate newest = context.newestBooked().get(accountId);
+            if (at == null || !at.atZone(context.zone()).toLocalDate().isAfter(day) || newest == null || !newest.isAfter(day)) {
                 return false;
             }
         }

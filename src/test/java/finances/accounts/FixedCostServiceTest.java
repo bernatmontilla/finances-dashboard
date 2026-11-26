@@ -997,6 +997,18 @@ class FixedCostServiceTest {
     }
 
     @Test
+    void anImportOfOldTransactionsAfterTheWindowRaisesNoMissingFlagButALaterBookedOneDoes() {
+        Account account = everyday();
+        dueOnTheFirst();
+        clock.set(date("2026-06-12"));
+        pay(account, "2026-06-05", -500, TransactionStatus.BOOKED, "Corner Grocery", null, "OLD-1");
+        assertThat(fixedCosts.flags()).as("delivered after the window, but booked before it closed").isEmpty();
+
+        pay(account, "2026-06-09", -500, TransactionStatus.BOOKED, "Corner Grocery", null, "NEW-1");
+        assertThat(fixedCosts.flags()).singleElement().satisfies(flag -> assertThat(flag.isMissing()).isTrue());
+    }
+
+    @Test
     void aChargeIsNotMissingWhenItWasTickedSkippedLinkedOrHasNoCounterpartyOrDoesNotRun() {
         Account account = everyday();
         FixedCost ticked = dueOnTheFirst();

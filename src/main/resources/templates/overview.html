@@ -41,6 +41,9 @@
         <p><a th:href="@{/fixed-costs}" th:text="#{overview.fixedCostsAll}"></a></p>
       </details>
     </section>
+    <p th:if="${fixedCostFlags gt 0}" class="notice" id="fixed-cost-flags">
+      <a th:href="@{/fixed-costs}" th:text="#{overview.fixedCostsFlags(${fixedCostFlags})}"></a>
+    </p>
     <div th:if="${!attention.empty}" class="notice warning" id="attention">
       <span th:text="#{overview.stale(${attention.size()})}"></span>
       <ul class="attention">

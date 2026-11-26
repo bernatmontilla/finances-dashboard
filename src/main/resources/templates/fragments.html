@@ -121,9 +121,42 @@
       <span class="muted nowrap" th:if="${row.hasNextDue()}" th:text="#{fixedcosts.nextDue(${row.nextDue})}"></span>
       <span class="muted nowrap" th:if="${row.hasEndedOn()}" th:text="#{fixedcosts.endedOn(${row.endedOn})}"></span>
     </span>
+    <div class="notice fixed-cost-flag" th:each="flag : ${row.flags}">
+      <p th:if="${flag.priceChange()}" th:text="#{fixedcosts.flag.priceChange(${flag.charged}, ${row.amount})}"></p>
+      <p th:if="${flag.missing()}" th:text="#{fixedcosts.flag.missing(${flag.expected})}"></p>
+      <div class="actions">
+        <form method="post" th:if="${flag.priceChange()}" th:action="@{/fixed-costs/{id}/take-over-amount(id=${row.id})}" class="inline">
+          <input type="hidden" name="transaction" th:value="${flag.transaction}">
+          <button type="submit" th:text="#{fixedcosts.flag.takeOver(${flag.charged})}"></button>
+        </form>
+        <form method="post" th:if="${flag.priceChange()}" th:action="@{/fixed-costs/{id}/keep-amount(id=${row.id})}" class="inline">
+          <input type="hidden" name="transaction" th:value="${flag.transaction}">
+          <button type="submit" class="secondary" th:text="#{fixedcosts.flag.keep(${row.amount})}"></button>
+        </form>
+        <form method="post" th:if="${flag.missing()}" th:action="@{/fixed-costs/{id}/mark-paid(id=${row.id})}" class="inline">
+          <input type="hidden" name="month" th:value="${flag.month}">
+          <button type="submit" th:text="#{fixedcosts.flag.markPaid(${flag.month})}"></button>
+        </form>
+        <form method="post" th:if="${flag.missing()}" th:action="@{/fixed-costs/{id}/skip(id=${row.id})}" class="inline">
+          <input type="hidden" name="month" th:value="${flag.month}">
+          <button type="submit" class="secondary" th:text="#{fixedcosts.flag.skip(${flag.month})}"></button>
+        </form>
+        <form method="post" th:if="${flag.missing()}" th:action="@{/fixed-costs/{id}/end(id=${row.id})}" class="inline">
+          <button type="submit" class="secondary" th:text="#{fixedcosts.flag.end}"></button>
+        </form>
+      </div>
+    </div>
     <span class="actions">
       <form method="post" th:if="${row.tickable() and !row.paid()}" th:action="@{/fixed-costs/{id}/tick(id=${row.id})}" class="inline">
         <button type="submit" class="secondary" th:text="#{fixedcosts.tick}"></button>
+      </form>
+      <form method="post" th:if="${row.stillToCome() and !row.hasMissing()}" th:action="@{/fixed-costs/{id}/skip(id=${row.id})}" class="inline">
+        <input type="hidden" name="month" th:value="${row.expectedMonth()}">
+        <button type="submit" class="link" th:text="#{fixedcosts.skip}"></button>
+      </form>
+      <form method="post" th:if="${row.skipped()}" th:action="@{/fixed-costs/{id}/unskip(id=${row.id})}" class="inline">
+        <input type="hidden" name="month" th:value="${row.expectedMonth()}">
+        <button type="submit" class="link" th:text="#{fixedcosts.unskip}"></button>
       </form>
       <form method="post" th:if="${row.paid()}" th:action="@{/fixed-costs/{id}/untick(id=${row.id})}" class="inline">
         <button type="submit" class="secondary" th:text="#{fixedcosts.untick}"></button>

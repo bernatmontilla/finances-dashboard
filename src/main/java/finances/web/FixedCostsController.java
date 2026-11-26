@@ -6,6 +6,7 @@ import finances.accounts.AccountService;
 import finances.accounts.AccountSummary;
 import finances.accounts.FixedCost;
 import finances.accounts.FixedCostException;
+import finances.accounts.FixedCostFlag;
 import finances.accounts.FixedCostService;
 import finances.accounts.FixedCostSummary;
 import finances.accounts.Scope;
@@ -16,11 +17,13 @@ import finances.money.Rhythm;
 import finances.sync.FreshnessService;
 import jakarta.servlet.http.HttpServletResponse;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -59,11 +62,12 @@ class FixedCostsController {
 
     private String listPage(Model model) {
         List<FixedCostViews.Group> groups = new ArrayList<>();
-        Map<Long, Freshness.Stale> stale = freshness.stale(accounts.list(false));
+        Map<Long, Freshness.Stale> stale = FixedCostViews.staleOfAll(accounts, freshness);
+        Map<Long, List<FixedCostFlag>> flags = fixedCosts.flags().stream().collect(Collectors.groupingBy(flag -> flag.cost().id()));
         for (Scope scope : Scope.values()) {
             FixedCostSummary summary = fixedCosts.summary(scope);
             FixedCostViews.Group group = FixedCostViews.group(scope, summary, fixedCosts.months(scope), this::accountName,
-                    FixedCostViews.basis(summary, accounts.zone(), accounts.today(), stale));
+                    FixedCostViews.basis(summary, accounts.zone(), accounts.today(), stale), flags);
             if (!group.isEmpty()) {
                 groups.add(group);
             }
@@ -149,6 +153,36 @@ class FixedCostsController {
     @PostMapping("/fixed-costs/{id}/untick")
     String untick(@PathVariable long id, Model model, HttpServletResponse response) {
         return act(id, model, response, () -> fixedCosts.untick(id));
+    }
+
+    // ----- the flags and the owner's answers (issue #22)
+
+    /** The owner says the charge of a month flagged as missing was paid. */
+    @PostMapping("/fixed-costs/{id}/mark-paid")
+    String markPaid(@PathVariable long id, @RequestParam(defaultValue = "") String month, Model model, HttpServletResponse response) {
+        return act(id, model, response, () -> fixedCosts.markPaid(id, parseMonth(month)));
+    }
+
+    @PostMapping("/fixed-costs/{id}/skip")
+    String skip(@PathVariable long id, @RequestParam(defaultValue = "") String month, Model model, HttpServletResponse response) {
+        return act(id, model, response, () -> fixedCosts.skip(id, parseMonth(month)));
+    }
+
+    @PostMapping("/fixed-costs/{id}/unskip")
+    String unskip(@PathVariable long id, @RequestParam(defaultValue = "") String month, Model model, HttpServletResponse response) {
+        return act(id, model, response, () -> fixedCosts.unskip(id, parseMonth(month)));
+    }
+
+    @PostMapping("/fixed-costs/{id}/take-over-amount")
+    String takeOverAmount(@PathVariable long id, @RequestParam(defaultValue = "") String transaction, Model model,
+            HttpServletResponse response) {
+        return act(id, model, response, () -> fixedCosts.takeOverAmount(id, parseTransaction(transaction)));
+    }
+
+    @PostMapping("/fixed-costs/{id}/keep-amount")
+    String keepAmount(@PathVariable long id, @RequestParam(defaultValue = "") String transaction, Model model,
+            HttpServletResponse response) {
+        return act(id, model, response, () -> fixedCosts.keepAmount(id, parseTransaction(transaction)));
     }
 
     // ----- pages and helpers
@@ -266,6 +300,23 @@ class FixedCostsController {
             return LocalDate.parse(date.strip());
         } catch (DateTimeParseException e) {
             throw new FixedCostException(FixedCostException.Reason.FIRST_DUE_INVALID);
+        }
+    }
+
+    /** A month or a transaction that cannot be read is no flag: refused as such, never guessed. */
+    private static YearMonth parseMonth(String month) {
+        try {
+            return YearMonth.parse(month.strip());
+        } catch (DateTimeParseException e) {
+            throw new FixedCostException(FixedCostException.Reason.NOT_FLAGGED);
+        }
+    }
+
+    private static long parseTransaction(String transaction) {
+        try {
+            return Long.parseLong(transaction.strip());
+        } catch (NumberFormatException e) {
+            throw new FixedCostException(FixedCostException.Reason.NOT_FLAGGED);
         }
     }
 

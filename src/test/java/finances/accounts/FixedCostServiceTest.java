@@ -774,6 +774,417 @@ class FixedCostServiceTest {
         assertThat(fixedCosts.summary(Scope.PRIVATE).basis()).isEmpty();
     }
 
+    // ----- the three fixes from the review of #63 (issue #22)
+
+    @Test
+    void savingAFixedCostKeepsTheLinkOfAMonthTheOwnerUntickedSoItsPaymentCannotMatchAnotherOne() {
+        Account account = everyday();
+        FixedCost cost = energy();
+        paidEnergy(account, "2026-06-15", -10000, "REF-1");
+        fixedCosts.matchPayments();
+        fixedCosts.untick(cost.id());
+        FixedCost twin = fixedCosts.create("Example Energy twin", Scope.PRIVATE, eur("100.00"), Rhythm.MONTHLY, date("2026-01-15"), null,
+                ENERGY_IBAN, null);
+        assertThat(status(twin)).as("the transaction stays with the first one").isEqualTo(Status.STILL_TO_COME);
+
+        fixedCosts.update(cost.id(), cost.name(), cost.scope(), cost.amount(), cost.rhythm(), cost.firstDue(), cost.counterpartyName(),
+                cost.counterpartyIban(), null);
+
+        assertThat(links()).isEqualTo(1);
+        assertThat(status(cost)).isEqualTo(Status.STILL_TO_COME);
+        assertThat(status(twin)).as("the twin did not get the payment").isEqualTo(Status.STILL_TO_COME);
+
+        fixedCosts.update(cost.id(), cost.name(), cost.scope(), cost.amount(), cost.rhythm(), cost.firstDue(), "Example Energy Renamed",
+                cost.counterpartyIban(), null);
+
+        assertThat(links()).as("also after a change of a field that matching uses").isEqualTo(1);
+        assertThat(status(twin)).isEqualTo(Status.STILL_TO_COME);
+    }
+
+    @Test
+    void savingWithOnlyTheNameChangedKeepsEveryLink() {
+        Account account = everyday();
+        FixedCost cost = energy();
+        paidEnergy(account, "2026-06-15", -10000, "REF-1");
+        fixedCosts.matchPayments();
+        String matchedAt = jdbc.sql("select matched_at from fixed_cost_match").query(String.class).single();
+        clock.set(date("2026-06-13"));
+
+        fixedCosts.update(cost.id(), "Example Energy (home)", cost.scope(), cost.amount(), cost.rhythm(), cost.firstDue(),
+                cost.counterpartyName(), cost.counterpartyIban(), null);
+
+        assertThat(jdbc.sql("select matched_at from fixed_cost_match").query(String.class).single()).as("not dropped and linked again")
+                .isEqualTo(matchedAt);
+        assertThat(status(cost)).isEqualTo(Status.PAID);
+    }
+
+    @Test
+    void aBankCorrectionOfALinkedPaymentKeepsTheLinkAndFlagsAPriceChangeOnlyBeyondTheTolerance() {
+        Account account = everyday();
+        FixedCost cost = energy();
+        paidEnergy(account, "2026-06-15", -10000, "REF-1");
+        fixedCosts.matchPayments();
+        assertThat(fixedCosts.flags()).isEmpty();
+
+        paidEnergy(account, "2026-06-15", -15000, "REF-1");
+        fixedCosts.matchPayments();
+
+        assertThat(links()).isEqualTo(1);
+        FixedCostMonth month = fixedCosts.month(cost.id());
+        assertThat(month.status()).isEqualTo(Status.PAID);
+        assertThat(month.isPaidByMatch()).isTrue();
+        assertThat(fixedCosts.flags()).singleElement().satisfies(flag -> {
+            assertThat(flag.kind()).isEqualTo(FixedCostFlag.Kind.PRICE_CHANGE);
+            assertThat(flag.charged()).contains(eur("150.00"));
+        });
+
+        paidEnergy(account, "2026-06-15", -10500, "REF-1");
+        assertThat(fixedCosts.flags()).as("5.00 more is within a tenth").isEmpty();
+        assertThat(status(cost)).isEqualTo(Status.PAID);
+    }
+
+    // ----- the previous month's occurrence (issue #22)
+
+    @Test
+    void aPaymentBookedAfterTheMonthEndedStillLinksToThePreviousMonthsOccurrenceWithinTheWindow() {
+        Account account = everyday();
+        clock.set(date("2026-12-02"));
+        fixedCosts.create("Example Energy", Scope.PRIVATE, eur("100.00"), Rhythm.MONTHLY, date("2026-01-28"), null, ENERGY_IBAN, null);
+        paidEnergy(account, "2026-12-02", -10000, "REF-1");
+        paidEnergy(account, "2026-12-06", -10000, "REF-2");
+
+        fixedCosts.matchPayments();
+
+        assertThat(jdbc.sql("select month from fixed_cost_match order by month").query(String.class).list())
+                .as("2 Dec links to 28 Nov; 6 Dec is 8 days after it and links to nothing before 28 Dec's window opens")
+                .containsExactly("2026-11");
+    }
+
+    // ----- tolerance edges and price change
+
+    private FixedCost gym() {
+        clock.set(date("2026-06-16"));
+        return fixedCosts.create("Example Gym", Scope.PRIVATE, eur("10.00"), Rhythm.MONTHLY, date("2026-01-15"), "Example Gym",
+                "NL53SHOP0000000103", null);
+    }
+
+    private long paidGym(Account account, long cents, String reference) {
+        return pay(account, "2026-06-15", cents, TransactionStatus.BOOKED, "Example Gym", "NL53SHOP0000000103", reference);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"-1100", "-900"})
+    void aChargeWithinATenthIsMatchedAndNotFlagged(long cents) {
+        Account account = everyday();
+        FixedCost cost = gym();
+        paidGym(account, cents, "REF-1");
+
+        fixedCosts.matchPayments();
+
+        assertThat(status(cost)).isEqualTo(Status.PAID);
+        assertThat(fixedCosts.flags()).isEmpty();
+    }
+
+    @ParameterizedTest
+    @CsvSource({"-1101, 11.01", "-899, 8.99"})
+    void aChargeBeyondATenthIsNotMatchedAndFlagsAPriceChange(long cents, String shown) {
+        Account account = everyday();
+        FixedCost cost = gym();
+        paidGym(account, cents, "REF-1");
+
+        fixedCosts.matchPayments();
+
+        assertThat(status(cost)).isEqualTo(Status.STILL_TO_COME);
+        assertThat(fixedCosts.flags()).singleElement().satisfies(flag -> {
+            assertThat(flag.isPriceChange()).isTrue();
+            assertThat(flag.charged()).contains(eur(shown));
+        });
+    }
+
+    @Test
+    void takingOverTheNewPriceChangesTheAmountClearsTheFlagAndLinksTheCharge() {
+        Account account = everyday();
+        FixedCost cost = gym();
+        long charge = paidGym(account, -1101, "REF-1");
+
+        fixedCosts.takeOverAmount(cost.id(), charge);
+
+        assertThat(fixedCosts.get(cost.id()).amount()).isEqualTo(eur("11.01"));
+        assertThat(fixedCosts.flags()).isEmpty();
+        assertThat(status(cost)).isEqualTo(Status.PAID);
+        assertThat(fixedCosts.month(cost.id()).payment()).hasValueSatisfying(t -> assertThat(t.id()).isEqualTo(charge));
+    }
+
+    @Test
+    void keepingTheAmountClearsTheFlagButALaterChargeThatDiffersRaisesItAgain() {
+        Account account = everyday();
+        FixedCost cost = gym();
+        long charge = paidGym(account, -1101, "REF-1");
+
+        fixedCosts.keepAmount(cost.id(), charge);
+
+        assertThat(fixedCosts.get(cost.id()).amount()).isEqualTo(eur("10.00"));
+        assertThat(fixedCosts.flags()).isEmpty();
+
+        clock.set(date("2026-07-16"));
+        pay(account, "2026-07-15", -1101, TransactionStatus.BOOKED, "Example Gym", "NL53SHOP0000000103", "REF-2");
+        assertThat(fixedCosts.flags()).singleElement().satisfies(flag -> assertThat(flag.isPriceChange()).isTrue());
+    }
+
+    @Test
+    void takeOverAndKeepAreRefusedUnlessTheTransactionIsTheCurrentFlag() {
+        Account account = everyday();
+        FixedCost cost = gym();
+        long charge = paidGym(account, -1101, "REF-1");
+        long other = pay(account, "2026-06-01", -5000, TransactionStatus.BOOKED, "Corner Grocery", "NL80SHOP0000000102", "REF-2");
+        FixedCost quiet = add("Example Telecom", Scope.PRIVATE, "20.00", Rhythm.MONTHLY, "2026-01-15");
+
+        refuse(Reason.NOT_FLAGGED, () -> fixedCosts.takeOverAmount(cost.id(), other));
+        refuse(Reason.NOT_FLAGGED, () -> fixedCosts.keepAmount(cost.id(), other));
+        refuse(Reason.NOT_FLAGGED, () -> fixedCosts.takeOverAmount(quiet.id(), charge));
+        refuse(Reason.NOT_FLAGGED, () -> fixedCosts.keepAmount(quiet.id(), charge));
+        refuse(Reason.NOT_FOUND, () -> fixedCosts.keepAmount(4711, charge));
+
+        assertThat(fixedCosts.get(cost.id()).amount()).isEqualTo(eur("10.00"));
+        assertThat(jdbc.sql("select count(*) from fixed_cost_price_kept").query(Integer.class).single()).isZero();
+    }
+
+    @Test
+    void twoFixedCostsOfOneCounterpartyAtDifferentAmountsBothChargedAreNotFlagged() {
+        Account account = everyday();
+        clock.set(date("2026-06-16"));
+        fixedCosts.create("Example Energy base", Scope.PRIVATE, eur("20.00"), Rhythm.MONTHLY, date("2026-01-15"), null, ENERGY_IBAN, null);
+        fixedCosts.create("Example Energy extra", Scope.PRIVATE, eur("30.00"), Rhythm.MONTHLY, date("2026-01-15"), null, ENERGY_IBAN, null);
+        paidEnergy(account, "2026-06-15", -2000, "REF-1");
+        paidEnergy(account, "2026-06-15", -3000, "REF-2");
+
+        fixedCosts.matchPayments();
+
+        assertThat(links()).isEqualTo(2);
+        assertThat(fixedCosts.flags()).isEmpty();
+    }
+
+    // ----- missing charges
+
+    private long deliveredOn(Account account, String day) {
+        clock.set(date(day));
+        return pay(account, day, -500, TransactionStatus.BOOKED, "Corner Grocery", null, "GROCERY-" + day);
+    }
+
+    private FixedCost dueOnTheFirst() {
+        clock.set(date("2026-06-01"));
+        return fixedCosts.create("Example Telecom", Scope.PRIVATE, eur("20.00"), Rhythm.MONTHLY, date("2026-06-01"), "Example Telecom",
+                "NL53SHOP0000000103", null);
+    }
+
+    @Test
+    void aChargeIsMissingOnlyAfterItsWindowClosedAndTransactionsWereDeliveredAfterwards() {
+        Account account = everyday();
+        dueOnTheFirst();
+
+        deliveredOn(account, "2026-06-08");
+        assertThat(fixedCosts.flags()).as("the window (1 June + 7 days) is still open on the 8th").isEmpty();
+
+        clock.set(date("2026-06-09"));
+        assertThat(fixedCosts.flags()).as("the last delivery was on the 8th, not after the window").isEmpty();
+
+        deliveredOn(account, "2026-06-09");
+        assertThat(fixedCosts.flags()).singleElement().satisfies(flag -> {
+            assertThat(flag.isMissing()).isTrue();
+            assertThat(flag.month()).isEqualTo(java.time.YearMonth.of(2026, 6));
+            assertThat(flag.expected()).isEqualTo(date("2026-06-01"));
+        });
+    }
+
+    @Test
+    void aChargeIsNotMissingWhenItWasTickedSkippedLinkedOrHasNoCounterpartyOrDoesNotRun() {
+        Account account = everyday();
+        FixedCost ticked = dueOnTheFirst();
+        FixedCost skipped = fixedCosts.create("Skipped", Scope.PRIVATE, eur("20.00"), Rhythm.MONTHLY, date("2026-06-01"), "Skipped Shop",
+                null, null);
+        FixedCost linked = fixedCosts.create("Linked", Scope.PRIVATE, eur("20.00"), Rhythm.MONTHLY, date("2026-06-01"), null, ENERGY_IBAN,
+                null);
+        fixedCosts.create("By hand", Scope.PRIVATE, eur("20.00"), Rhythm.MONTHLY, date("2026-06-01"), null, null, null);
+        FixedCost paused = fixedCosts.create("Paused", Scope.PRIVATE, eur("20.00"), Rhythm.MONTHLY, date("2026-06-01"), "Paused Shop", null,
+                null);
+        FixedCost endedToday = fixedCosts.create("Ended", Scope.PRIVATE, eur("20.00"), Rhythm.MONTHLY, date("2026-06-01"), "Ended Shop",
+                null, null);
+        fixedCosts.tick(ticked.id());
+        fixedCosts.skip(skipped.id(), java.time.YearMonth.of(2026, 6));
+        paidEnergy(account, "2026-06-02", -2000, "REF-1");
+        fixedCosts.matchPayments();
+        fixedCosts.pause(paused.id());
+
+        clock.set(date("2026-06-09"));
+        deliveredOn(account, "2026-06-09");
+        fixedCosts.end(endedToday.id(), null);
+
+        assertThat(status(linked)).isEqualTo(Status.PAID);
+        assertThat(fixedCosts.flags()).isEmpty();
+    }
+
+    @Test
+    void aWindowThatClosedBeforeThePreviousMonthIsNotFlagged() {
+        Account account = everyday();
+        clock.set(date("2026-06-01"));
+        fixedCosts.create("Example Insurance", Scope.PRIVATE, eur("60.00"), Rhythm.QUARTERLY, date("2026-06-01"), "Example Insurance",
+                "NL53SHOP0000000103", null);
+
+        deliveredOn(account, "2026-08-20");
+
+        assertThat(fixedCosts.flags()).as("the June window closed two months ago and nothing is due in July or August").isEmpty();
+    }
+
+    @Test
+    void aChargeAtAnotherPriceIsAPriceChangeAndNotAMissingCharge() {
+        Account account = everyday();
+        FixedCost cost = dueOnTheFirst();
+        clock.set(date("2026-07-09"));
+        pay(account, "2026-07-02", -3000, TransactionStatus.BOOKED, "Example Telecom", "NL53SHOP0000000103", "REF-1");
+        deliveredOn(account, "2026-07-09");
+
+        assertThat(fixedCosts.flags()).singleElement().satisfies(flag -> {
+            assertThat(flag.isPriceChange()).isTrue();
+            assertThat(flag.charged()).contains(eur("30.00"));
+            assertThat(flag.cost().id()).isEqualTo(cost.id());
+        });
+    }
+
+    @Test
+    void anUntickedMatchedMonthWhoseWindowClosedIsFlaggedAsMissing() {
+        Account account = everyday();
+        FixedCost cost = energy();
+        paidEnergy(account, "2026-06-15", -10000, "REF-1");
+        fixedCosts.matchPayments();
+        fixedCosts.untick(cost.id());
+
+        deliveredOn(account, "2026-06-23");
+
+        assertThat(fixedCosts.flags()).singleElement().satisfies(flag -> assertThat(flag.isMissing()).isTrue());
+    }
+
+    @Test
+    void markingAMissingChargeAsPaidTicksThatMonthEvenInThePreviousMonthAndOtherMonthsAreRefused() {
+        Account account = everyday();
+        clock.set(date("2026-05-01"));
+        FixedCost cost = fixedCosts.create("Example Telecom", Scope.PRIVATE, eur("20.00"), Rhythm.MONTHLY, date("2026-05-01"),
+                "Example Telecom", null, null);
+        deliveredOn(account, "2026-06-03");
+        assertThat(fixedCosts.flags()).singleElement().satisfies(flag -> assertThat(flag.month()).isEqualTo(java.time.YearMonth.of(2026, 5)));
+
+        refuse(Reason.NOT_FLAGGED, () -> fixedCosts.markPaid(cost.id(), java.time.YearMonth.of(2026, 6)));
+        fixedCosts.markPaid(cost.id(), java.time.YearMonth.of(2026, 5));
+
+        assertThat(fixedCosts.flags()).isEmpty();
+        assertThat(jdbc.sql("select month from fixed_cost_paid").query(String.class).list()).containsExactly("2026-05");
+    }
+
+    @Test
+    void endingAFixedCostFromAMissingFlagEndsItTodayAndTheFlagGoes() {
+        Account account = everyday();
+        FixedCost cost = dueOnTheFirst();
+        deliveredOn(account, "2026-06-09");
+        assertThat(fixedCosts.flags()).hasSize(1);
+
+        fixedCosts.end(cost.id(), null);
+
+        assertThat(fixedCosts.flags()).isEmpty();
+        assertThat(fixedCosts.get(cost.id()).endedOn()).isEqualTo(date("2026-06-09"));
+    }
+
+    // ----- skipping a period
+
+    @Test
+    void skippingThisMonthTakesItOutOfStillToComeAndTheTotalsButNotOutOfTheYear() {
+        FixedCost cost = add("Example Telecom", Scope.PRIVATE, "20.00", Rhythm.MONTHLY, "2026-06-15");
+        FixedCostSummary before = fixedCosts.summary(Scope.PRIVATE);
+        assertThat(before.stillToComeTotal()).isEqualTo(eur("20.00"));
+
+        fixedCosts.skip(cost.id(), java.time.YearMonth.of(2026, 6));
+
+        assertThat(status(cost)).isEqualTo(Status.SKIPPED);
+        FixedCostSummary after = fixedCosts.summary(Scope.PRIVATE);
+        assertThat(after.hasStillToCome()).isFalse();
+        assertThat(after.stillToComeTotal()).isEqualTo(Money.zero());
+        assertThat(after.perMonth()).isEqualTo(before.perMonth());
+        assertThat(after.perYear()).isEqualTo(before.perYear());
+
+        fixedCosts.unskip(cost.id(), java.time.YearMonth.of(2026, 6));
+        assertThat(status(cost)).isEqualTo(Status.STILL_TO_COME);
+        refuse(Reason.NOT_SKIPPED, () -> fixedCosts.unskip(cost.id(), java.time.YearMonth.of(2026, 6)));
+    }
+
+    @Test
+    void tickingASkippedMonthDeletesTheSkipAndOnlyThisMonthOrAFlaggedOneCanBeSkipped() {
+        FixedCost cost = add("Example Telecom", Scope.PRIVATE, "20.00", Rhythm.MONTHLY, "2026-06-15");
+        fixedCosts.skip(cost.id(), java.time.YearMonth.of(2026, 6));
+
+        fixedCosts.tick(cost.id());
+
+        assertThat(status(cost)).isEqualTo(Status.PAID);
+        assertThat(jdbc.sql("select count(*) from fixed_cost_skipped").query(Integer.class).single()).isZero();
+        refuse(Reason.NOT_FLAGGED, () -> fixedCosts.skip(cost.id(), java.time.YearMonth.of(2026, 6)));
+        refuse(Reason.NOT_FLAGGED, () -> fixedCosts.skip(cost.id(), java.time.YearMonth.of(2026, 3)));
+    }
+
+    // ----- what the owner entered is never lost (hard rule 10)
+
+    @Test
+    void nothingASyncOrMatchingRunsDeletesWhatTheOwnerAnsweredAndRunningTwiceAddsNothing() {
+        Account account = everyday();
+        FixedCost cost = gym();
+        long charge = paidGym(account, -1101, "REF-1");
+        fixedCosts.keepAmount(cost.id(), charge);
+        FixedCost telecom = add("Example Telecom", Scope.PRIVATE, "20.00", Rhythm.MONTHLY, "2026-06-20");
+        fixedCosts.skip(telecom.id(), java.time.YearMonth.of(2026, 6));
+        FixedCost energy = fixedCosts.create("Example Energy", Scope.PRIVATE, eur("100.00"), Rhythm.MONTHLY, date("2026-06-18"), null,
+                ENERGY_IBAN, null);
+        fixedCosts.tick(energy.id());
+
+        for (int run = 0; run < 2; run++) {
+            paidGym(account, -1101, "REF-1");
+            fixedCosts.matchPayments();
+        }
+
+        assertThat(jdbc.sql("select count(*) from fixed_cost_price_kept").query(Integer.class).single()).isEqualTo(1);
+        assertThat(jdbc.sql("select count(*) from fixed_cost_skipped").query(Integer.class).single()).isEqualTo(1);
+        assertThat(jdbc.sql("select count(*) from fixed_cost_paid").query(Integer.class).single()).isEqualTo(1);
+        assertThat(jdbc.sql("select count(*) from transactions").query(Integer.class).single()).isEqualTo(1);
+    }
+
+    @Test
+    void aHalfYearOfFictionalChargesGivesTheExpectedFlags() {
+        Account account = everyday();
+        clock.set(date("2026-01-02"));
+        fixedCosts.create("Example Telecom", Scope.PRIVATE, eur("20.00"), Rhythm.MONTHLY, date("2026-01-03"), "Example Telecom",
+                "NL80SHOP0000000102", null);
+        fixedCosts.create("Example Insurance", Scope.PRIVATE, eur("60.00"), Rhythm.QUARTERLY, date("2026-01-10"), "Example Insurance",
+                "NL53SHOP0000000103", null);
+        fixedCosts.create("Example Gym", Scope.PRIVATE, eur("30.00"), Rhythm.MONTHLY, date("2026-01-05"), "Example Gym", "NL10SHOP0000000101",
+                null);
+        fixedCosts.create("Example Energy", Scope.PRIVATE, eur("80.00"), Rhythm.MONTHLY, date("2026-01-12"), "Example Energy", null,
+                null);
+        for (int month = 1; month <= 6; month++) {
+            String m = String.format("2026-%02d", month);
+            clock.set(date(m + "-20"));
+            pay(account, m + "-03", -2000, TransactionStatus.BOOKED, "Example Telecom", "NL80SHOP0000000102", "T-" + m);
+            // the gym raises its price from April
+            pay(account, m + "-05", month >= 4 ? -3600 : -3000, TransactionStatus.BOOKED, "Example Gym", "NL10SHOP0000000101", "G-" + m);
+            if (month == 1 || month == 4) {
+                pay(account, m + "-10", -6000, TransactionStatus.BOOKED, "Example Insurance", "NL53SHOP0000000103", "I-" + m);
+            }
+            if (month <= 3) {
+                pay(account, m + "-12", -8000, TransactionStatus.BOOKED, "Example Energy", null, "E-" + m);
+            }
+            fixedCosts.matchPayments();
+        }
+        clock.set(date("2026-06-25"));
+        pay(account, "2026-06-24", -500, TransactionStatus.BOOKED, "Corner Grocery", null, "G-final");
+
+        assertThat(fixedCosts.flags()).extracting(f -> f.cost().name() + ":" + f.kind() + ":" + f.month())
+                .containsExactlyInAnyOrder("Example Gym:PRICE_CHANGE:2026-06", "Example Energy:MISSING:2026-06");
+    }
+
     /** A clock the test can move, one day at a time. */
     private static final class TestClock extends Clock {
         private volatile Instant now;

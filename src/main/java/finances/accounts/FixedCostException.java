@@ -24,7 +24,9 @@ public class FixedCostException extends RuntimeException {
         PAUSED,
         ALREADY_PAUSED,
         NOT_PAUSED_OR_ENDED,
-        NO_CHARGE_THIS_MONTH
+        NO_CHARGE_THIS_MONTH,
+        NOT_FLAGGED,
+        NOT_SKIPPED
     }
 
     private final Reason reason;

@@ -68,6 +68,11 @@ counterparty's IBAN or name; the amount within 10 % and the date within 7 days),
 month wins over the match; "still to come" then shows how old the transactions behind it are); a yearly one is simply "next due" in the other months. Use a fixed cost for what comes back, and a reservation for the
 one big bill you can see coming, not both for the same expense.
 
+A fixed cost with a counterparty also tells you when something is off, and never changes by itself: a **price change** (the latest charge is
+more than 10 % from the stored amount: take over the new price or keep the old one) and a **missing** charge (nothing arrived within 7 days
+of its date, after a delivery that should have had it: mark it paid, skip this period or end the fixed cost). The overview shows one line
+when any are open.
+
 `GET /health` answers `200` with `{"status":"ok","version":"…"}` when the database is reachable, and `503` with `{"status":"unavailable","version":"…"}` otherwise.
 
 One test class while working: `./mvnw -q test -Dtest=ClassName`.

@@ -14,6 +14,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -154,31 +155,27 @@ public class AfterTaxClient {
 
     /** Reads at most the limit plus one byte on another thread, so a body that trickles can be cut off by closing it. */
     private byte[] readBody(InputStream body, long deadline) {
-        CompletableFuture<byte[]> reading = CompletableFuture.supplyAsync(() -> {
-            try {
-                ByteArrayOutputStream out = new ByteArrayOutputStream();
-                byte[] buffer = new byte[8192];
-                int total = 0;
-                int n;
-                while (total <= MAX_BODY_BYTES && (n = body.read(buffer, 0, Math.min(buffer.length, MAX_BODY_BYTES + 1 - total))) >= 0) {
-                    out.write(buffer, 0, n);
-                    total += n;
-                }
-                return out.toByteArray();
-            } catch (IOException e) {
-                throw new java.io.UncheckedIOException(e);
+        Future<byte[]> reading = readers.submit(() -> {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            int total = 0;
+            int n;
+            while (total <= MAX_BODY_BYTES && (n = body.read(buffer, 0, Math.min(buffer.length, MAX_BODY_BYTES + 1 - total))) >= 0) {
+                out.write(buffer, 0, n);
+                total += n;
             }
-        }, readers);
+            return out.toByteArray();
+        });
         byte[] bytes;
         try {
             bytes = reading.get(Math.max(1, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
         } catch (TimeoutException e) {
             try {
-                body.close();
+                body.close(); // what ends a blocked read
             } catch (IOException ignored) {
-                // closing is what ends the blocked read
+                // nothing more to do
             }
-            reading.cancel(true);
+            reading.cancel(true); // and interrupts the thread, in case closing did not wake it
             throw new AfterTaxException(AfterTaxException.Reason.TIMEOUT);
         } catch (ExecutionException e) {
             throw new AfterTaxException(AfterTaxException.Reason.UNREACHABLE);

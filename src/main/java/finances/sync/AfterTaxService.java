@@ -128,7 +128,9 @@ public class AfterTaxService {
         }
         try {
             return fetch.get(client.timeout().toMillis() + 5_000, TimeUnit.MILLISECONDS) ? TestResult.OK : TestResult.FAILED;
-        } catch (TimeoutException | ExecutionException e) {
+        } catch (TimeoutException e) {
+            return TestResult.BUSY; // still running (it may be waiting for the database): the result shows in the list when it ends
+        } catch (ExecutionException e) {
             return TestResult.FAILED;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -165,13 +167,15 @@ public class AfterTaxService {
     private AfterTaxReason record(Trigger trigger, Instant started, AfterTaxValue value, AfterTaxReason failure, Integer status) {
         try {
             inTransaction.executeWithoutResult(tx -> {
+                // The first statement is a write, so the single SQLite writer is taken (and waited for) up front instead of
+                // upgrading a read lock halfway, which fails at once when the bank sync committed in between.
+                store.insertFetch(row(trigger, started, failure, status));
                 if (value != null) {
                     Optional<AfterTaxValue> newest = store.newest();
                     if (newest.isEmpty() || !newest.get().sameAnswerAs(value)) {
                         store.insertValue(value);
                     }
                 }
-                store.insertFetch(row(trigger, started, failure, status));
             });
             return failure;
         } catch (RuntimeException e) {

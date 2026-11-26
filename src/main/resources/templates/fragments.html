@@ -88,6 +88,16 @@
     </th:block>
   </span>
 
+  <!--
+    What "still to come" rests on (issue #63, hard rule 9): fixed costs are matched against transactions, so the figure is as current as
+    the least current delivery of the accounts involved, and stale when one of them is.
+  -->
+  <div th:fragment="fixedBasis(basis)" class="muted fixed-basis">
+    <span th:text="#{fixedcosts.basis}"></span>
+    <span th:replace="~{fragments :: delivered(${basis.delivery})}"></span>
+    <th:block th:replace="~{fragments :: stale(${basis.stale})}"></th:block>
+  </div>
+
   <!-- An open reservation (issue #20): its name, due date and what is reserved so far; the overdue flag is a word, not a colour. -->
   <span th:fragment="reservationDue(row)" class="reservation-due">
     <strong th:text="${row.name}"></strong>
@@ -106,6 +116,7 @@
     <span class="balance">
       <strong th:text="#{'fixedcosts.status.' + ${row.status}}"></strong>
       <span class="muted nowrap" th:if="${row.hasExpected()}" th:text="#{fixedcosts.expected(${row.expected})}"></span>
+      <span class="muted nowrap" th:if="${row.hasPayment()}" th:text="#{fixedcosts.paidBy(${row.paidOn}, ${row.paidAmount})}"></span>
       <span class="pending" th:if="${row.overdue}" th:text="#{fixedcosts.overdue}"></span>
       <span class="muted nowrap" th:if="${row.hasNextDue()}" th:text="#{fixedcosts.nextDue(${row.nextDue})}"></span>
       <span class="muted nowrap" th:if="${row.hasEndedOn()}" th:text="#{fixedcosts.endedOn(${row.endedOn})}"></span>

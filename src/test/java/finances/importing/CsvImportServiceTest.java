@@ -11,6 +11,8 @@ import finances.accounts.Account;
 import finances.accounts.AccountException;
 import finances.accounts.AccountService;
 import finances.accounts.BalanceEntry;
+import finances.accounts.FixedCostMonth;
+import finances.accounts.FixedCostService;
 import finances.accounts.Kind;
 import finances.accounts.Scope;
 import finances.accounts.Transaction;
@@ -41,6 +43,7 @@ class CsvImportServiceTest {
 
     private AccountService accounts;
     private TransactionService transactions;
+    private FixedCostService fixedCosts;
     private CsvImportService importing;
     private JdbcClient jdbc;
     private Account csv;
@@ -55,7 +58,8 @@ class CsvImportServiceTest {
         jdbc = JdbcClient.create(dataSource);
         accounts = new AccountService(jdbc, CLOCK);
         transactions = new TransactionService(jdbc, CLOCK, new DataSourceTransactionManager(dataSource));
-        importing = new CsvImportService(accounts, transactions, jdbc, CLOCK);
+        fixedCosts = new FixedCostService(jdbc, CLOCK, accounts, transactions);
+        importing = new CsvImportService(accounts, transactions, fixedCosts, jdbc, CLOCK);
         csv = accounts.addCsv("Imported current", Scope.PRIVATE, Kind.CURRENT, "NL51XMPL0000000001");
     }
 
@@ -139,6 +143,26 @@ class CsvImportServiceTest {
         ImportReport second = importing.importFile(csv.id(), bytes, mapping);
         assertThat(second).extracting(ImportReport::added, ImportReport::updated, ImportReport::known).containsExactly(0, 0, 4);
         assertThat(stored()).isEqualTo(4);
+    }
+
+    // ----- fixed costs matched after an import (issue #63)
+
+    @Test
+    void anImportedRowThatPaysAFixedCostMarksItPaidAndTheSameFileAgainAddsNoLink() {
+        var energy = fixedCosts.create("Example Energy", Scope.PRIVATE, finances.money.Money.parse("100.00"), finances.money.Rhythm.MONTHLY,
+                LocalDate.of(2026, 1, 15), null, "NL10SHOP0000000101", null);
+        assertThat(fixedCosts.month(energy.id()).status()).isEqualTo(FixedCostMonth.Status.STILL_TO_COME);
+        byte[] bytes = text("date,amount,name,iban,description\n2026-06-14,-100.00,Example Energy,NL10SHOP0000000101,Energy June\n");
+
+        assertThat(importDetected(bytes).added()).isEqualTo(1);
+
+        FixedCostMonth month = fixedCosts.month(energy.id());
+        assertThat(month.status()).isEqualTo(FixedCostMonth.Status.PAID);
+        assertThat(month.payment()).isPresent();
+        assertThat(jdbc.sql("select count(*) from fixed_cost_match").query(Integer.class).single()).isEqualTo(1);
+
+        assertThat(importDetectedConfirmed(bytes).added()).isZero();
+        assertThat(jdbc.sql("select count(*) from fixed_cost_match").query(Integer.class).single()).isEqualTo(1);
     }
 
     // ----- shape 3: tab, a balance column, thousands separators

@@ -128,16 +128,32 @@ public class ReservationService {
     /** How far a payment is from the reserved amount in cents; the largest value when that does not fit (it is then never close). */
     private static long amountGap(Reservation reservation, Transaction transaction) {
         try {
-            return Math.abs(Math.subtractExact(transaction.amount().negate().cents(), reservation.amount().cents()));
+            return amountGap(transaction.amount().negate().cents(), reservation.amount().cents());
         } catch (ArithmeticException e) {
             return Long.MAX_VALUE;
         }
     }
 
+    /** The distance between two amounts in cents; the largest value when it does not fit (it is then never close). */
+    static long amountGap(long paidCents, long expectedCents) {
+        try {
+            return Math.abs(Math.subtractExact(paidCents, expectedCents));
+        } catch (ArithmeticException e) {
+            return Long.MAX_VALUE;
+        }
+    }
+
+    /**
+     * Whether a gap is within one tenth of the expected amount, in whole cents (10 * gap <= amount, as gap <= amount / 10 rounded
+     * down). One rule for a reservation's payment and for a fixed cost's (issue #63).
+     */
+    static boolean amountClose(long gapCents, long expectedCents) {
+        return gapCents <= expectedCents / LIKELY_AMOUNT_DIVISOR;
+    }
+
     private static boolean isLikely(Reservation reservation, Transaction transaction) {
         long gap = amountGap(reservation, transaction);
-        // 10 * gap <= amount, in whole cents: the same as gap <= amount / 10 rounded down
-        boolean amountClose = gap <= reservation.amount().cents() / LIKELY_AMOUNT_DIVISOR;
+        boolean amountClose = amountClose(gap, reservation.amount().cents());
         boolean dateClose = Math.abs(ChronoUnit.DAYS.between(transaction.bookingDate(), reservation.dueDate())) <= LIKELY_DAYS;
         return amountClose && dateClose;
     }

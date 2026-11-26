@@ -91,6 +91,9 @@ mention the test here.
   `FixedCostService` writes `fixed_cost` and `fixed_cost_paid`, and a tick is per month so edits never lose it. A Thymeleaf `th:each`
   and `th:replace` on one element do not combine (the replace wins): wrap the fragment in a `th:block th:each`
   (`docs/decisions/21-fixed-costs.md`).
+- Fixed costs matched to payments (#63): a link (`fixed_cost_match`) is written only by `FixedCostService.matchPayments`, never from a GET, keyed
+  by the month of the *expected* date, and never moved; a hand tick beats a link and an untick of a matched month (`fixed_cost_unpaid`) beats it
+  again, so never delete either from a sync or an import (`docs/decisions/63-fixed-costs-matched.md`).
 
 ## The target machine
 

@@ -63,8 +63,9 @@ Both are lists kept by hand, and both stay out of each other's way. A **reservat
 payment (an insurance bill in December, a new laptop): what is reserved so far is held back from the headline number of its
 scope. A **fixed cost** **repeats** (rent, a subscription, a quarterly premium): the *Fixed costs* page gives its monthly and yearly
 totals per scope and says which of them are still to come this month, and the overview shows that total beside the headline
-numbers, never subtracted from them. For the current month a fixed cost is *paid* once you mark it as paid, and *still to come*
-otherwise; a yearly one is simply "next due" in the other months. Use a fixed cost for what comes back, and a reservation for the
+numbers, never subtracted from them. For the current month a fixed cost is *paid* once you mark it as paid, or once a matching booked payment arrives (give it the
+counterparty's IBAN or name; the amount within 10 % and the date within 7 days), and *still to come* otherwise (unticking a matched
+month wins over the match; "still to come" then shows how old the transactions behind it are); a yearly one is simply "next due" in the other months. Use a fixed cost for what comes back, and a reservation for the
 one big bill you can see coming, not both for the same expense.
 
 `GET /health` answers `200` with `{"status":"ok","version":"…"}` when the database is reachable, and `503` with `{"status":"unavailable","version":"…"}` otherwise.

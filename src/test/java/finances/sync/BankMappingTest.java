@@ -54,6 +54,73 @@ class BankMappingTest {
                 .isInstanceOfSatisfying(BankApiException.class, e -> assertThat(e.reason()).isEqualTo(BankApiException.Reason.UNEXPECTED));
     }
 
+    // ----- the day of the fetch is not a date the bank stated (issue #39)
+
+    @Test
+    void onlyAPendingItemWithoutAnyDateIsMarkedAsDatedByTheFetch() {
+        String pendingWithoutDate = """
+                {"transaction_amount":{"currency":"EUR","amount":"8.00"},"creditor":{"name":"Example Gym"},
+                 "credit_debit_indicator":"DBIT","status":"PDNG"}
+                """;
+        DeliveredTransaction undated = transaction(pendingWithoutDate);
+        assertThat(undated.datedByFetch()).isTrue();
+        assertThat(undated.bookingDate()).isEqualTo(FETCH_DAY);
+
+        for (String field : List.of("booking_date", "transaction_date", "value_date")) {
+            DeliveredTransaction dated = transaction(pendingWithoutDate.replace("\"status\":\"PDNG\"", "\"status\":\"PDNG\",\"" + field + "\":\"2026-11-20\""));
+            assertThat(dated.datedByFetch()).as(field).isFalse();
+            assertThat(dated.bookingDate()).isEqualTo(LocalDate.of(2026, 11, 20));
+        }
+        assertThat(transaction(withAmount("8.00", "DBIT").replace("\"booking_date\":\"2026-11-20\"", "\"x\":1")).datedByFetch())
+                .as("a booked item is never marked").isFalse();
+    }
+
+    // ----- amount signs on a transaction (issue #39)
+
+    private static String withAmount(String amount, String indicator) {
+        return """
+                {"entry_reference":"E-5","transaction_amount":{"currency":"EUR","amount":"%s"},
+                 "creditor":{"name":"Corner Grocery"},"debtor":{"name":"Sam Voorbeeld"},
+                 "credit_debit_indicator":"%s","status":"BOOK","booking_date":"2026-11-20"}
+                """.formatted(amount, indicator);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"-12.34", "12.34"})
+    void aDebitIsSpendingWhetherTheAmountIsUnsignedOrSignedAndAgreesWithTheIndicator(String amount) {
+        assertThat(transaction(withAmount(amount, "DBIT")).amountCents()).isEqualTo(-1234);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"+12.34", "12.34"})
+    void aCreditIsIncomeWhetherTheAmountIsUnsignedOrSignedAndAgreesWithTheIndicator(String amount) {
+        assertThat(transaction(withAmount(amount, "CRDT")).amountCents()).isEqualTo(1234);
+    }
+
+    @Test
+    void aSignThatContradictsTheIndicatorIsRefusedAndNeverGuessed() {
+        assertThatThrownBy(() -> transaction(withAmount("-12.34", "CRDT"))).isInstanceOf(BankMapping.Contradiction.class);
+        assertThatThrownBy(() -> transaction(withAmount("+12.34", "DBIT"))).isInstanceOf(BankMapping.Contradiction.class);
+        // The refusal carries nothing of the transaction.
+        assertThatThrownBy(() -> transaction(withAmount("-12.34", "CRDT"))).hasMessage(null);
+    }
+
+    @Test
+    void anItemWithABrokenDateOrCurrencyStillFailsTheFetchEvenWhenItsSignContradicts() {
+        String brokenDate = withAmount("-12.34", "CRDT").replace("2026-11-20", "not-a-date");
+        assertThatThrownBy(() -> transaction(brokenDate))
+                .isInstanceOfSatisfying(BankApiException.class, e -> assertThat(e.reason()).isEqualTo(BankApiException.Reason.UNEXPECTED));
+        String noCurrency = withAmount("-12.34", "CRDT").replace("\"currency\":\"EUR\",", "");
+        assertThatThrownBy(() -> transaction(noCurrency)).isInstanceOf(BankApiException.class);
+    }
+
+    @Test
+    void aSignedAmountThatIsNotANumberIsStillUnexpected() {
+        assertThatThrownBy(() -> transaction(withAmount("--12.34", "DBIT")))
+                .isInstanceOfSatisfying(BankApiException.class, e -> assertThat(e.reason()).isEqualTo(BankApiException.Reason.UNEXPECTED));
+        assertThatThrownBy(() -> transaction(withAmount("-", "DBIT"))).isInstanceOf(BankApiException.class);
+    }
+
     // ----- transactions
 
     @Test
@@ -125,7 +192,6 @@ class BankMappingTest {
     void aTransactionThatIsNotShapedAsDocumentedFailsTheWholeFetch() {
         for (String broken : List.of(
                 "{\"credit_debit_indicator\":\"DBIT\",\"status\":\"BOOK\",\"booking_date\":\"2026-11-24\"}",
-                "{\"transaction_amount\":{\"currency\":\"EUR\",\"amount\":\"-8.00\"},\"credit_debit_indicator\":\"DBIT\",\"status\":\"BOOK\",\"booking_date\":\"2026-11-24\"}",
                 "{\"transaction_amount\":{\"currency\":\"EUR\",\"amount\":\"8.00\"},\"credit_debit_indicator\":\"XXXX\",\"status\":\"BOOK\",\"booking_date\":\"2026-11-24\"}",
                 "{\"transaction_amount\":{\"currency\":\"EUR\",\"amount\":\"8.00\"},\"credit_debit_indicator\":\"DBIT\",\"status\":\"BOOK\",\"booking_date\":\"not a date\"}",
                 "{\"transaction_amount\":{\"currency\":\"EUR\",\"amount\":\"8.00\"},\"credit_debit_indicator\":\"DBIT\"}")) {

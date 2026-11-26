@@ -557,6 +557,116 @@ class BankSyncTest {
         assertThat(h.bank.requests("GET", "/accounts/" + FakeEnableBanking.SAVINGS_UID)).isEmpty();
     }
 
+    // ----- follow-ups from the review of the bank sync (issue #39)
+
+    private static String transactionsJson(String... items) {
+        return "{\"transactions\":[" + String.join(",", items) + "]}";
+    }
+
+    private static String item(String reference, String status, String amount, String indicator, String date, String description) {
+        String references = reference == null ? "" : "\"entry_reference\":\"" + reference + "\",";
+        String dates = date == null ? "" : ",\"booking_date\":\"" + date + "\"";
+        return "{" + references + "\"transaction_amount\":{\"currency\":\"EUR\",\"amount\":\"" + amount + "\"},"
+                + "\"creditor\":{\"name\":\"Example Gym\"},\"debtor\":{\"name\":\"Sam Voorbeeld\"},"
+                + "\"credit_debit_indicator\":\"" + indicator + "\",\"status\":\"" + status + "\""
+                + dates + ",\"remittance_information\":[\"" + description + "\"]}";
+    }
+
+    @Test
+    void aSignedAmountIsReadAndOneThatContradictsItsIndicatorIsRefusedAndCountedWhileTheRestIsStored() {
+        h.bank.transactionsBody(transactionsJson(
+                item("E-1", "BOOK", "12.34", "DBIT", "2026-11-20", "Unsigned debit"),
+                item("E-2", "BOOK", "-5.00", "DBIT", "2026-11-21", "Signed debit"),
+                item("E-3", "BOOK", "-7.00", "CRDT", "2026-11-22", "Contradiction"),
+                item("E-4", "BOOK", "20.00", "CRDT", "2026-11-23", "Unsigned credit")));
+
+        linkBothAsNewAccounts();
+
+        assertThat(everydayTransactions()).extracting(t -> t.amount().cents()).containsExactlyInAnyOrder(-1234L, -500L, 2000L);
+        SyncRunRow run = lastRun(everyday());
+        assertThat(run.ok()).as("one refused transaction does not fail the account").isTrue();
+        assertThat(run.added()).isEqualTo(3);
+        assertThat(run.refused()).isEqualTo(1);
+        // Fetched again: the same three are known, the contradiction is refused again, nothing is stored twice.
+        nextDay();
+        h.sync.syncAll(SyncTrigger.SCHEDULED, Map.of());
+        assertThat(everydayTransactions()).hasSize(3);
+        assertThat(lastRun(everyday()).refused()).isEqualTo(1);
+        assertThat(lastRun(everyday()).known()).isEqualTo(3);
+    }
+
+    @Test
+    void aPendingItemDatedByTheFetchDayIsTakenOverWhenItIsBookedUnderANewReferenceWithAnEarlierDate() {
+        // The bank gave the pending item no date at all: it is stored with the day of the fetch, 2026-11-26.
+        h.bank.transactionsBody(transactionsJson(item(null, "PDNG", "8.00", "DBIT", null, "Day pass")));
+        linkBothAsNewAccounts();
+        Transaction pending = everydayTransactions().getFirst();
+        assertThat(pending.pending()).isTrue();
+        assertThat(pending.bookingDate()).isEqualTo(LocalDate.of(2026, 11, 26));
+        h.transactions.setNote(pending.id(), "With Alex Sample");
+
+        // Booked later, dated before the day it was first seen.
+        h.bank.transactionsBody(transactionsJson(item("E-9", "BOOK", "8.00", "DBIT", "2026-11-24", "Day pass")));
+        nextDay();
+        h.sync.syncAll(SyncTrigger.SCHEDULED, Map.of());
+
+        assertThat(everydayTransactions()).singleElement().satisfies(t -> {
+            assertThat(t.id()).isEqualTo(pending.id());
+            assertThat(t.status()).isEqualTo(TransactionStatus.BOOKED);
+            assertThat(t.bookingDate()).isEqualTo(LocalDate.of(2026, 11, 24));
+            assertThat(t.note()).isEqualTo("With Alex Sample");
+        });
+    }
+
+    @Test
+    void aPendingItemThatCameWithADateKeepsTheStrictRuleAgainstAnEarlierBookedDate() {
+        h.bank.transactionsBody(transactionsJson(item(null, "PDNG", "8.00", "DBIT", "2026-11-26", "Day pass")));
+        linkBothAsNewAccounts();
+        assertThat(everydayTransactions()).singleElement().satisfies(t -> assertThat(t.pending()).isTrue());
+
+        h.bank.transactionsBody(transactionsJson(
+                item(null, "PDNG", "8.00", "DBIT", "2026-11-26", "Day pass"),
+                item("E-9", "BOOK", "8.00", "DBIT", "2026-11-24", "Day pass")));
+        nextDay();
+        h.sync.syncAll(SyncTrigger.SCHEDULED, Map.of());
+
+        // The bank itself dated the pending one 2026-11-26 and booked another purchase two days before it: no take-over.
+        assertThat(everydayTransactions()).hasSize(2);
+    }
+
+    @Test
+    void aFetchWithARefusedTransactionRemovesNoPendingRow() {
+        h.bank.transactionsBody(transactionsJson(item("P-1", "PDNG", "8.00", "DBIT", "2026-11-25", "Day pass")));
+        linkBothAsNewAccounts();
+        assertThat(everydayTransactions()).singleElement().satisfies(t -> assertThat(t.pending()).isTrue());
+
+        // The booked version of it comes with a contradicting sign: refused, so the pending row is not "no longer reported".
+        h.bank.transactionsBody(transactionsJson(item("B-1", "BOOK", "-8.00", "CRDT", "2026-11-25", "Day pass")));
+        nextDay();
+        h.sync.syncAll(SyncTrigger.SCHEDULED, Map.of());
+
+        assertThat(everydayTransactions()).singleElement().satisfies(t -> assertThat(t.pending()).isTrue());
+        assertThat(lastRun(everyday()).refused()).isEqualTo(1);
+        assertThat(lastRun(everyday()).pendingRemoved()).isZero();
+    }
+
+    @Test
+    void aSessionFileLeftBehindByAnotherConsentIsNeverUsed() throws Exception {
+        long consent = linkBothAsNewAccounts();
+        // After a restore, a file of another consent that had the same id is lying in the secrets folder.
+        h.sessions.write(consent, "99999999-9999-4999-8999-999999999999", SessionFiles.newTag());
+        h.bank.forget();
+        nextDay();
+
+        h.sync.syncAll(SyncTrigger.SCHEDULED, Map.of());
+
+        assertThat(h.status.consent(consent).orElseThrow().ended()).as("shows as needing Renew").isTrue();
+        assertThat(h.bank.requests()).as("the leftover id never went to the bank").extracting(FakeEnableBanking.Request::path)
+                .noneMatch(path -> path.contains("99999999"));
+        assertThat(h.bank.requests("GET", "/accounts/")).isEmpty();
+        assertThat(h.bank.requests("GET", "/sessions/")).isEmpty();
+    }
+
     @Test
     void aConsentWithoutItsSessionFileAfterARestoreShowsAsExpired() throws Exception {
         long consent = linkBothAsNewAccounts();

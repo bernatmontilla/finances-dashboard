@@ -8,9 +8,10 @@ import java.util.List;
  * ({@link SessionFiles}).
  *
  * @param requiredPsuHeaders the headers the bank wants on a fetch the user started; empty when it lists none
+ * @param sessionTag the random value the consent's session file must carry; null for a consent from before tags
  */
 public record Consent(long id, String bankName, String bankCountry, List<String> requiredPsuHeaders, Instant createdAt,
-        Instant validUntil, ConsentStatus status) {
+        Instant validUntil, ConsentStatus status, String sessionTag) {
 
     public boolean ended() {
         return status != ConsentStatus.AUTHORIZED;

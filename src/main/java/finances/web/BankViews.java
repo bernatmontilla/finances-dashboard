@@ -8,6 +8,8 @@ import finances.sync.Consent;
 import finances.sync.SyncRunRow;
 import finances.sync.SyncSummary;
 import jakarta.servlet.http.HttpServletRequest;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -130,7 +132,7 @@ final class BankViews {
      */
     static Map<String, String> userHeaders(HttpServletRequest request) {
         Map<String, String> headers = new LinkedHashMap<>();
-        put(headers, "Psu-Ip-Address", request.getRemoteAddr());
+        put(headers, "Psu-Ip-Address", personsAddress(request.getRemoteAddr()));
         put(headers, "Psu-User-Agent", request.getHeader("User-Agent"));
         put(headers, "Psu-Accept", request.getHeader("Accept"));
         put(headers, "Psu-Accept-Charset", request.getHeader("Accept-Charset"));
@@ -138,6 +140,29 @@ final class BankViews {
         put(headers, "Psu-Accept-Language", request.getHeader("Accept-Language"));
         put(headers, "Psu-Http-Method", request.getMethod().toUpperCase(Locale.ROOT));
         return headers;
+    }
+
+    /**
+     * The address the server saw, when it can be the address of the person: behind {@code tailscale serve} or another
+     * reverse proxy it is the proxy's own (loopback), and an address that is link-local or unspecified is no address of
+     * anyone. Forwarded headers are never trusted. Null when the text is no literal IP address (nothing is looked up).
+     */
+    static String personsAddress(String remote) {
+        if (remote == null) {
+            return null;
+        }
+        // Only a literal address is parsed: InetAddress would look a name up, and a string like "999.1.1.1" counts as one.
+        boolean ipv6 = remote.matches("[0-9a-fA-F:.]*:[0-9a-fA-F:.]*(%[A-Za-z0-9_.-]+)?");
+        boolean ipv4 = remote.matches("(25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})(\\.(25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})){3}");
+        if (!ipv6 && !ipv4) {
+            return null;
+        }
+        try {
+            InetAddress address = InetAddress.getByName(remote.replaceFirst("%.*$", ""));
+            return address.isLoopbackAddress() || address.isLinkLocalAddress() || address.isAnyLocalAddress() ? null : remote;
+        } catch (UnknownHostException e) {
+            return null;
+        }
     }
 
     private static void put(Map<String, String> headers, String name, String value) {

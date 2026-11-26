@@ -62,6 +62,7 @@ public final class FakeEnableBanking implements AutoCloseable {
     private final Map<String, String> failures = Collections.synchronizedMap(new HashMap<>());
     private final Map<String, String> balanceTypesOverride = Collections.synchronizedMap(new HashMap<>());
     private volatile Transactions transactions = Transactions.FIRST;
+    private volatile String transactionsBody;
     private volatile boolean failSecondPage;
     private volatile boolean renewedSession;
     private volatile boolean emptySession;
@@ -123,6 +124,12 @@ public final class FakeEnableBanking implements AutoCloseable {
 
     public void transactions(Transactions mode) {
         this.transactions = mode;
+        this.transactionsBody = null;
+    }
+
+    /** Answers the current account's transactions with exactly this JSON (one page, no continuation) until {@link #transactions} is called. */
+    void transactionsBody(String json) {
+        this.transactionsBody = json;
     }
 
     void failSecondPageOfTransactions(boolean fail) {
@@ -260,6 +267,10 @@ public final class FakeEnableBanking implements AutoCloseable {
     private void transactions(HttpExchange exchange, String uid, String key) throws IOException {
         if (!uid.endsWith("1")) {
             respond(exchange, 200, "{\"transactions\":[]}");
+            return;
+        }
+        if (transactionsBody != null) {
+            respond(exchange, 200, transactionsBody);
             return;
         }
         switch (transactions) {

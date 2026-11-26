@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
 class BankStore {
 
     private static final String CONSENT = """
-            select id, bank_name, bank_country, required_psu_headers, created_at, valid_until, status from bank_consent
+            select id, bank_name, bank_country, required_psu_headers, created_at, valid_until, status, session_tag from bank_consent
             """;
     private static final String LINK = """
             select id, consent_id, uid, identification_hash, iban, holder_name, details, currency, cash_account_type, account_id, last_success_at
@@ -31,13 +31,13 @@ class BankStore {
 
     // ----- consents
 
-    long insertConsent(String bankName, String country, List<String> requiredHeaders, Instant now, Instant validUntil) {
+    long insertConsent(String bankName, String country, List<String> requiredHeaders, Instant now, Instant validUntil, String sessionTag) {
         KeyHolder key = new GeneratedKeyHolder();
         jdbc.sql("""
-                        insert into bank_consent (bank_name, bank_country, psu_type, required_psu_headers, created_at, valid_until, status, status_changed_at)
-                        values (?, ?, 'personal', ?, ?, ?, 'authorized', ?)
+                        insert into bank_consent (bank_name, bank_country, psu_type, required_psu_headers, created_at, valid_until, status, status_changed_at, session_tag)
+                        values (?, ?, 'personal', ?, ?, ?, 'authorized', ?, ?)
                         """)
-                .params(bankName, country, String.join(",", requiredHeaders), now.toString(), validUntil.toString(), now.toString())
+                .params(bankName, country, String.join(",", requiredHeaders), now.toString(), validUntil.toString(), now.toString(), sessionTag)
                 .update(key);
         return key.getKey().longValue();
     }
@@ -204,7 +204,7 @@ class BankStore {
                 headers.isBlank() ? List.of() : Arrays.asList(headers.split(",")),
                 Instant.parse(rs.getString("created_at")),
                 Instant.parse(rs.getString("valid_until")),
-                ConsentStatus.parse(rs.getString("status")));
+                ConsentStatus.parse(rs.getString("status")), rs.getString("session_tag"));
     }
 
     private static BankAccountLink link(ResultSet rs, int row) throws SQLException {

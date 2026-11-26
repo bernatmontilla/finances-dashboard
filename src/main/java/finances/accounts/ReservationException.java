@@ -18,7 +18,12 @@ public class ReservationException extends RuntimeException {
         CLOSED,
         ALREADY_CLOSED,
         NOT_CLOSED,
-        NEXT_ROUND_CHANGED
+        NEXT_ROUND_CHANGED,
+        DUE_NOT_SETTABLE,
+        TRANSACTION_NOT_FOUND,
+        TRANSACTION_NOT_BOOKED,
+        TRANSACTION_NOT_SPENDING,
+        TRANSACTION_OUT_OF_SCOPE
     }
 
     private final Reason reason;

@@ -57,7 +57,7 @@ class ReservationsController {
         List<ReservationViews.Group> groups = new ArrayList<>();
         for (Scope scope : Scope.values()) {
             ReservationViews.Group group = ReservationViews.group(scope, reservations.summary(scope, 0), reservations.openStandings(scope),
-                    reservations.closed(scope), accounts.zone(), source);
+                    reservations.closedWithPayments(scope), accounts.zone(), source);
             if (!group.isEmpty()) {
                 groups.add(group);
             }
@@ -121,14 +121,24 @@ class ReservationsController {
 
     // ----- close, reopen, remove
 
+    /** The payments an open reservation can be closed against, the likely ones first. */
+    @GetMapping("/reservations/{id}/close")
+    String closeForm(@PathVariable long id, Model model) {
+        return closePage(model, openOne(id));
+    }
+
+    /**
+     * Closes a reservation. A blank {@code transaction} closes it without a payment, as before; otherwise it is closed against that
+     * booked payment, and a refusal shows the list of payments again.
+     */
     @PostMapping("/reservations/{id}/close")
-    String close(@PathVariable long id, Model model, HttpServletResponse response) {
-        found(id);
+    String close(@PathVariable long id, @RequestParam(defaultValue = "") String transaction, Model model, HttpServletResponse response) {
+        Reservation reservation = found(id);
         try {
-            reservations.close(id);
+            reservations.close(id, transaction.isBlank() ? null : parseTransaction(transaction));
             return "redirect:/reservations";
         } catch (ReservationException e) {
-            return refused(response, model, e, listPage(model));
+            return refused(response, model, e, reservation.isOpen() ? closePage(model, reservation) : listPage(model));
         }
     }
 
@@ -144,13 +154,32 @@ class ReservationsController {
     }
 
     @PostMapping("/reservations/{id}/remove")
-    String remove(@PathVariable long id) {
+    String remove(@PathVariable long id, Model model, HttpServletResponse response) {
         found(id);
-        reservations.remove(id);
-        return "redirect:/reservations";
+        try {
+            reservations.remove(id);
+            return "redirect:/reservations";
+        } catch (ReservationException e) {
+            return refused(response, model, e, listPage(model));
+        }
     }
 
     // ----- pages and helpers
+
+    private String closePage(Model model, Reservation reservation) {
+        model.addAttribute("reservation", reservation);
+        model.addAttribute("standing", ReservationViews.row(reservations.standing(reservation)));
+        model.addAttribute("candidates", reservations.paymentCandidates(reservation.id()).stream().map(ReservationViews::candidateRow).toList());
+        return "reservation-close";
+    }
+
+    private static long parseTransaction(String transaction) {
+        try {
+            return Long.parseLong(transaction.strip());
+        } catch (NumberFormatException e) {
+            throw new ReservationException(ReservationException.Reason.TRANSACTION_NOT_FOUND);
+        }
+    }
 
     private String form(Model model, Reservation reservation, String name, String scope, String amount, String due, boolean yearly,
             String reserved) {

@@ -53,7 +53,7 @@ final class BackupFixtures {
         jdbc = JdbcClient.create(dataSource);
         accounts = new AccountService(jdbc, CLOCK);
         transactions = new TransactionService(jdbc, CLOCK, new DataSourceTransactionManager(dataSource));
-        reservations = new ReservationService(jdbc, CLOCK, accounts);
+        reservations = new ReservationService(jdbc, CLOCK, accounts, transactions);
     }
 
     static BackupFixtures open(Path folder) {

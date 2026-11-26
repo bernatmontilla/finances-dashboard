@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title th:text="#{reservation.close.title}"></title>
+  <link rel="stylesheet" th:href="@{/app.css}">
+</head>
+<body>
+  <main>
+    <nav th:replace="~{fragments :: nav}"></nav>
+    <h1 th:text="#{reservation.close.title}"></h1>
+    <p th:replace="~{fragments :: error}"></p>
+    <p><span th:replace="~{fragments :: reservationDue(${standing})}"></span></p>
+    <p class="muted" th:text="#{reservation.close.intro}"></p>
+    <p th:if="${candidates.empty}" th:text="#{reservation.close.none}"></p>
+    <form th:unless="${candidates.empty}" method="post" th:action="@{/reservations/{id}/close(id=${reservation.id})}">
+      <ul class="list payments">
+        <li th:each="candidate : ${candidates}">
+          <label class="check">
+            <input type="radio" name="transaction" th:value="${candidate.id}" required>
+            <span>
+              <strong class="amount" th:text="${candidate.amount}"></strong>
+              <span class="muted nowrap" th:text="${candidate.date}"></span>
+              <span class="muted" th:text="${candidate.account}"></span>
+              <span th:if="${candidate.counterparty != null}" th:text="${candidate.counterparty}"></span>
+              <span class="muted" th:if="${!candidate.description.isEmpty()}" th:text="${candidate.description}"></span>
+              <strong class="balance" th:if="${candidate.likely}" th:text="#{reservation.close.likely}"></strong>
+            </span>
+          </label>
+        </li>
+      </ul>
+      <p class="actions">
+        <button type="submit" th:text="#{reservation.close.submit}"></button>
+        <a th:href="@{/reservations}" th:text="#{reservation.cancel}"></a>
+      </p>
+    </form>
+    <form method="post" th:action="@{/reservations/{id}/close(id=${reservation.id})}">
+      <p class="actions">
+        <button type="submit" class="secondary" th:text="#{reservation.close.without}"></button>
+        <a th:if="${candidates.empty}" th:href="@{/reservations}" th:text="#{reservation.cancel}"></a>
+      </p>
+    </form>
+  </main>
+</body>
+</html>

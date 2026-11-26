@@ -25,6 +25,8 @@ public record FixedCostMonth(FixedCost cost, Status status, Optional<LocalDate> 
         /** It runs, but is charged in another month. */
         NOT_THIS_MONTH,
         PAUSED,
+        /** The owner skipped this month's charge (issue #22): neither paid nor still to come, and never flagged as missing. */
+        SKIPPED,
         /** It ended on or before today: listed, read-only, never to come. */
         ENDED
     }

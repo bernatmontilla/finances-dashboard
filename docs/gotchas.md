@@ -95,6 +95,11 @@ mention the test here.
   by the month of the *expected* date, and never moved; a hand tick beats a link and an untick of a matched month (`fixed_cost_unpaid`) beats it
   again, so never delete either from a sync or an import (`docs/decisions/63-fixed-costs-matched.md`).
 
+- Fixed cost flags (#22): a price change and a missing charge are worked out on read (`FixedCostService.flags`), never stored; what the owner
+  answers (`fixed_cost_skipped`, `fixed_cost_price_kept`, ticks, unticks) is stored and never deleted by a sync or matching. Which transactions
+  are a counterparty's is `windowCharges` only; the tolerance is `ReservationService.amountClose`; the stale map of the fixed costs page and the
+  overview includes archived accounts (`FixedCostViews.staleOfAll`) but the overview's top line does not (`docs/decisions/22-fixed-cost-flags.md`).
+
 ## The target machine
 
 - Low memory, possibly shared with other services: the heap cap is real. Stream large result sets.

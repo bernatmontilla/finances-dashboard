@@ -354,6 +354,140 @@ class FixedCostsPagesTest {
         assertThat(jdbc.sql("select account_id from fixed_cost where id = ?").param(id).query(Long.class).single()).isEqualTo(account);
     }
 
+    // ----- flags (issue #22)
+
+    private void deliverGym(long account, LocalDate booked, long cents, String reference) {
+        transactions.deliver(account, Source.CSV, List.of(new DeliveredTransaction(booked, null, cents, "EUR", "Example Gym", null,
+                "Fictional payment", TransactionStatus.BOOKED, reference, "raw " + reference)));
+    }
+
+    private void addGym() throws Exception {
+        Map<String, String> gym = form("Example Gym", "private", "10.00", "monthly", today().toString());
+        gym.put("counterparty", "Example Gym");
+        assertThat(post("/fixed-costs", gym).statusCode()).isEqualTo(302);
+    }
+
+    @Test
+    void aPriceChangeIsFlaggedOnThePageAndTheOverviewAndTheOwnerCanTakeItOverOrKeepTheOldPrice() throws Exception {
+        long account = accounts.addManual("Everyday", Scope.PRIVATE, Kind.CURRENT, null).id();
+        addEnergy();
+        long id = idOf("Example Energy");
+        assertThat(get("/").body()).doesNotContain("need a look").doesNotContain("needs a look");
+
+        deliverEnergy(account, today(), -15000, "REF-1");
+
+        String page = get("/fixed-costs").body();
+        assertThat(page).contains("The latest charge was €150.00, not €100.00").contains("Take over €150.00").contains("Keep €100.00");
+        assertThat(get("/").body()).contains("Fixed costs: 1 needs a look").contains("id=\"fixed-cost-flags\"");
+
+        long transaction = jdbc.sql("select id from transactions where reference = 'REF-1'").query(Long.class).single();
+        assertThat(post("/fixed-costs/" + id + "/keep-amount", Map.of("transaction", Long.toString(transaction))).statusCode()).isEqualTo(302);
+        assertThat(get("/fixed-costs").body()).doesNotContain("The latest charge was");
+        assertThat(get("/").body()).doesNotContain("need a look").doesNotContain("needs a look");
+        assertThat(jdbc.sql("select amount_cents from fixed_cost where id = ?").param(id).query(Long.class).single()).isEqualTo(10000);
+
+        deliverEnergy(account, today(), -15000, "REF-2");
+        long second = jdbc.sql("select id from transactions where reference = 'REF-2'").query(Long.class).single();
+        assertThat(get("/fixed-costs").body()).contains("Take over €150.00");
+        assertThat(post("/fixed-costs/" + id + "/take-over-amount", Map.of("transaction", Long.toString(second))).statusCode()).isEqualTo(302);
+        assertThat(jdbc.sql("select amount_cents from fixed_cost where id = ?").param(id).query(Long.class).single()).isEqualTo(15000);
+        assertThat(get("/fixed-costs").body()).doesNotContain("The latest charge was").contains("Paid this month");
+    }
+
+    @Test
+    void answersToAFlagThatIsNotOpenAreRefusedWithStatus400AndStoreNothing() throws Exception {
+        long account = accounts.addManual("Everyday", Scope.PRIVATE, Kind.CURRENT, null).id();
+        addEnergy();
+        long id = idOf("Example Energy");
+        deliverEnergy(account, today(), -15000, "REF-1");
+
+        for (String path : new String[] {"/take-over-amount", "/keep-amount"}) {
+            HttpResponse<String> refused = post("/fixed-costs/" + id + path, Map.of("transaction", "4711"));
+            assertThat(refused.statusCode()).isEqualTo(400);
+            assertThat(refused.body()).contains("the flag is no longer open");
+            assertThat(post("/fixed-costs/" + id + path, Map.of("transaction", "not a number")).statusCode()).isEqualTo(400);
+        }
+        assertThat(post("/fixed-costs/" + id + "/mark-paid", Map.of("month", today().toString().substring(0, 7))).statusCode()).isEqualTo(400);
+        assertThat(post("/fixed-costs/" + id + "/unskip", Map.of("month", today().toString().substring(0, 7))).statusCode()).isEqualTo(400);
+        assertThat(post("/fixed-costs/" + id + "/skip", Map.of("month", "garbage")).statusCode()).isEqualTo(400);
+        assertThat(jdbc.sql("select amount_cents from fixed_cost where id = ?").param(id).query(Long.class).single()).isEqualTo(10000);
+        assertThat(jdbc.sql("select count(*) from fixed_cost_price_kept").query(Integer.class).single()).isZero();
+    }
+
+    @Test
+    void aMissingChargeIsFlaggedAndTheOwnerCanMarkItPaidSkipItOrEndTheFixedCost() throws Exception {
+        long account = accounts.addManual("Everyday", Scope.PRIVATE, Kind.CURRENT, null).id();
+        Map<String, String> gym = form("Example Gym", "private", "10.00", "monthly", today().minusDays(10).toString());
+        gym.put("counterparty", "Example Gym");
+        assertThat(post("/fixed-costs", gym).statusCode()).isEqualTo(302);
+        long id = idOf("Example Gym");
+        jdbc.sql("update fixed_cost set created_at = ? where id = ?").params(today().minusDays(60) + "T10:00:00Z", id).update();
+        deliverEnergy(account, today(), -999, "REF-OTHER");
+
+        String page = get("/fixed-costs").body();
+        assertThat(page).contains("No payment arrived for the charge expected").contains("Mark as paid").contains("Skip this period")
+                .contains("End this fixed cost");
+        assertThat(get("/").body()).contains("Fixed costs: 1 needs a look");
+        Matcher month = Pattern.compile("name=\"month\" value=\"(\\d{4}-\\d{2})\"").matcher(page);
+        assertThat(month.find()).isTrue();
+
+        assertThat(post("/fixed-costs/" + id + "/skip", Map.of("month", month.group(1))).statusCode()).isEqualTo(302);
+        assertThat(get("/fixed-costs").body()).doesNotContain("No payment arrived");
+        assertThat(post("/fixed-costs/" + id + "/unskip", Map.of("month", month.group(1))).statusCode()).isEqualTo(302);
+        assertThat(get("/fixed-costs").body()).contains("No payment arrived");
+        assertThat(post("/fixed-costs/" + id + "/mark-paid", Map.of("month", month.group(1))).statusCode()).isEqualTo(302);
+        assertThat(get("/fixed-costs").body()).doesNotContain("No payment arrived");
+        assertThat(jdbc.sql("select count(*) from fixed_cost_paid where month = ?").param(month.group(1)).query(Integer.class).single()).isEqualTo(1);
+    }
+
+    @Test
+    void thisMonthsChargeCanBeSkippedAndTheSkipTakenBack() throws Exception {
+        accounts.addManual("Everyday", Scope.PRIVATE, Kind.CURRENT, null);
+        post("/fixed-costs", form("Example Gym", "private", "10.00", "monthly", today().toString()));
+        long id = idOf("Example Gym");
+        String month = today().toString().substring(0, 7);
+
+        assertThat(post("/fixed-costs/" + id + "/skip", Map.of("month", month)).statusCode()).isEqualTo(302);
+        String page = get("/fixed-costs").body();
+        assertThat(page).contains("Skipped this month").contains("Undo skip").doesNotContain("Still to come this month");
+        assertThat(get("/").body()).doesNotContain("still to come this month");
+
+        assertThat(post("/fixed-costs/" + id + "/unskip", Map.of("month", month)).statusCode()).isEqualTo(302);
+        assertThat(get("/fixed-costs").body()).contains("Still to come this month").doesNotContain("Undo skip");
+    }
+
+    @Test
+    void twoOpenFlagsShowOneLineOnTheOverviewAndTheHeadlineNumberIsTheSameWithAndWithoutThem() throws Exception {
+        long everyday = accounts.addManual("Everyday", Scope.PRIVATE, Kind.CURRENT, null).id();
+        accounts.addBalance(everyday, Money.eur(123456), today());
+        addEnergy();
+        addGym();
+        String before = headlineAmount(get("/").body(), "Private free to spend");
+
+        deliverEnergy(everyday, today(), -15000, "REF-1");
+        deliverGym(everyday, today(), -2000, "REF-2");
+
+        String overview = get("/").body();
+        assertThat(overview).contains("Fixed costs: 2 need a look");
+        assertThat(headlineAmount(overview, "Private free to spend")).isEqualTo(before);
+    }
+
+    @Test
+    void aFixedCostOfAnArchivedAccountStillShowsTheStaleMarkOnThePageAndTheOverviewButTheTopLineDoesNotListIt() throws Exception {
+        long account = accounts.addManual("Everyday", Scope.PRIVATE, Kind.CURRENT, null).id();
+        accounts.addBalance(account, Money.eur(1000), today().minusDays(90));
+        Map<String, String> energy = form("Example Energy", "private", "100.00", "monthly", today().toString());
+        energy.put("iban", "NL10SHOP0000000101");
+        energy.put("account", Long.toString(account));
+        assertThat(post("/fixed-costs", energy).statusCode()).isEqualTo(302);
+        accounts.archive(account);
+
+        assertThat(get("/fixed-costs").body()).contains("Matched against transactions").contains("Stale").contains("not updated for 90 days");
+        String overview = get("/").body();
+        assertThat(overview).contains("Matched against transactions").contains("not updated for 90 days");
+        assertThat(overview).as("the line at the top counts accounts in use only").doesNotContain("id=\"attention\"");
+    }
+
     // ----- refusals
 
     @Test

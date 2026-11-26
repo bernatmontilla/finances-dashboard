@@ -80,7 +80,10 @@ class OverviewController {
         Map<Long, BankBalanceInfo> banks = accounts.latestBankBalances();
         model.addAttribute("headlines", HeadlineViews.headlines(headlines.headlines(active, stale), accounts.today(), accounts.zone(), banks));
         model.addAttribute("reservationGroups", reservationGroups());
-        model.addAttribute("fixedCostsComing", fixedCostsComing(stale));
+        // A fixed cost may rest on an account archived since: its figures keep the stale mark (hard rule 9), though the line at the top
+        // below counts accounts in use only.
+        model.addAttribute("fixedCostsComing", fixedCostsComing(FixedCostViews.staleOfAll(accounts, freshness)));
+        model.addAttribute("fixedCostFlags", fixedCosts.flags().size());
         model.addAttribute("groups", AccountViews.groups(active, accounts.today(), Map.of(), accounts.zone(), banks, stale));
         model.addAttribute("attention", active.stream().filter(s -> stale.containsKey(s.account().id()))
                 .map(s -> new AttentionRow(s.account().id(), s.account().name())).toList());

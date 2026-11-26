@@ -56,6 +56,53 @@
     </section>
 
     <section>
+      <h2 th:text="#{aftertax.title}"></h2>
+      <p th:text="#{aftertax.intro}"></p>
+      <p th:if="${afterTax.hasNotice()}" class="notice" role="status" th:text="#{${afterTax.noticeKey}}"></p>
+      <p th:unless="${afterTax.configured}" class="muted" th:text="#{aftertax.notConfigured}"></p>
+      <th:block th:if="${afterTax.configured}">
+        <p th:text="${afterTax.https} ? #{aftertax.configured.https} : #{aftertax.configured.http}"></p>
+        <p th:text="${afterTax.tokenPresent} ? #{aftertax.token.present} : #{aftertax.token.absent}"></p>
+        <p th:if="${afterTax.tokenOverPlainHttp}" class="notice" th:text="#{aftertax.token.plainHttp}"></p>
+
+        <h3 th:text="#{aftertax.value}"></h3>
+        <p th:unless="${afterTax.hasValue()}" class="muted" th:text="#{aftertax.noValue}"></p>
+        <th:block th:if="${afterTax.hasValue()}">
+          <p>
+            <span th:replace="~{fragments :: balance(${afterTax.value.balance}, false)}"></span>
+            <th:block th:replace="~{fragments :: stale(${afterTax.stale})}"></th:block>
+          </p>
+          <p th:if="${afterTax.value.mismatch}" class="notice" th:text="#{aftertax.mismatch}"></p>
+          <p th:if="${afterTax.value.hasGross()}" th:text="#{aftertax.gross(${afterTax.value.gross})}"></p>
+          <ul class="list" th:if="${afterTax.value.hasReserved()}">
+            <li th:each="line : ${afterTax.value.reserved}" class="bank-row">
+              <span th:text="${line.label}"></span>
+              <span class="muted" th:text="${line.amount}"></span>
+            </li>
+          </ul>
+        </th:block>
+
+        <h3 th:text="#{aftertax.fetches}"></h3>
+        <p th:unless="${afterTax.hasFetches()}" class="muted" th:text="#{aftertax.noFetches}"></p>
+        <ul class="list runs" th:if="${afterTax.hasFetches()}">
+          <li th:each="fetch : ${afterTax.fetches}" class="bank-row">
+            <span class="muted" th:text="${fetch.when}"></span>
+            <span class="muted" th:text="#{${fetch.triggerKey}}"></span>
+            <strong th:if="${fetch.ok}" th:text="#{aftertax.fetch.ok}"></strong>
+            <strong th:unless="${fetch.ok}" class="error" th:text="#{aftertax.fetch.failed(#{${fetch.reasonKey}})}"></strong>
+            <span th:if="${fetch.hasStatus()}" class="muted" th:text="#{aftertax.fetch.status(${fetch.status})}"></span>
+          </li>
+        </ul>
+
+        <form method="post" th:action="@{/settings/after-tax/test}">
+          <p class="actions">
+            <button type="submit" class="secondary" th:text="#{aftertax.test}"></button>
+          </p>
+        </form>
+      </th:block>
+    </section>
+
+    <section>
       <h2 th:text="#{backup.title}"></h2>
       <p th:text="#{backup.intro}"></p>
       <p class="notice" th:text="#{backup.secrets}"></p>

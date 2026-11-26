@@ -29,14 +29,16 @@ class SyncScheduler {
     private static final Logger LOG = LoggerFactory.getLogger(SyncScheduler.class);
 
     private final BankSyncService sync;
+    private final AfterTaxService afterTax;
     private final Clock clock;
     private final boolean enabled;
     private final LocalTime time;
     private ScheduledExecutorService executor;
 
-    SyncScheduler(BankSyncService sync, Clock clock, @Value("${finances.sync.enabled:true}") boolean enabled,
+    SyncScheduler(BankSyncService sync, AfterTaxService afterTax, Clock clock, @Value("${finances.sync.enabled:true}") boolean enabled,
             @Value("${finances.sync.time:04:30}") String time) {
         this.sync = sync;
+        this.afterTax = afterTax;
         this.clock = clock;
         this.enabled = enabled;
         try {
@@ -70,14 +72,19 @@ class SyncScheduler {
         executor.schedule(this::runOnce, untilNext(clock, time).toMillis(), TimeUnit.MILLISECONDS);
     }
 
-    private void runOnce() {
+    void runOnce() {
+        try {
+            afterTax.start(AfterTaxService.Trigger.SCHEDULED); // on its own thread: a slow source never delays the bank sync
+        } catch (RuntimeException e) {
+            LOG.warn("The daily after-tax fetch could not be started ({}).", e.getClass().getSimpleName());
+        }
         try {
             sync.syncAll(SyncTrigger.SCHEDULED, Map.of());
         } catch (RuntimeException e) {
             LOG.warn("The daily bank sync failed ({}).", e.getClass().getSimpleName());
         } finally {
             synchronized (this) {
-                if (!executor.isShutdown()) {
+                if (executor != null && !executor.isShutdown()) {
                     scheduleNext();
                 }
             }

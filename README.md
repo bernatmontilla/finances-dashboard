@@ -32,6 +32,8 @@ a private network is the installer's job.
 | `finances.freshness.savings-days` | The same for a *savings* account, default `45`. |
 | `finances.freshness.investment-days` | The same for an *investment* account, default `100`. |
 | `finances.freshness.debt-days` | The same for a *debt*, default `100`. |
+| `finances.freshness.after-tax-hours` | The after-tax value is marked stale when the moment the source calculated it (`as_of`) is older than this many hours, default `48`. |
+| `finances.outbound.after-tax.url` (or `FINANCES_OUTBOUND_AFTER_TAX_URL`) | The address of the after-tax source: an `http` or `https` address of a host, without credentials, query or fragment. Empty (the default) means no source. The token is a file in the data folder, see `docs/install.md`. |
 
 Every limit is a whole number of 1 or more; a smaller one stops the application at start with a message.
 

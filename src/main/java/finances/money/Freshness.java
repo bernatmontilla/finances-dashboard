@@ -28,7 +28,11 @@ public final class Freshness {
         /** The last successful sync is older than the limit for a bank account. */
         SYNC_OLD,
         /** A balance typed in or imported is older than the limit for its kind of account. */
-        NOT_UPDATED
+        NOT_UPDATED,
+        /** The newest fetch of the after-tax source failed ({@link Stale#detail()} is its short reason code). */
+        SOURCE_FAILED,
+        /** The after-tax value's own {@code as_of} is older than the limit. */
+        SOURCE_OLD
     }
 
     /**
@@ -43,23 +47,33 @@ public final class Freshness {
      * How old a figure may get before it is stale: hours for a bank account (it is fetched every day), days
      * for what is updated by hand, per kind of account.
      */
-    public record Limits(int bankSyncHours, int currentDays, int savingsDays, int investmentDays, int debtDays) {
+    public record Limits(int bankSyncHours, int currentDays, int savingsDays, int investmentDays, int debtDays, int afterTaxHours) {
 
         public static final int DEFAULT_BANK_SYNC_HOURS = 36;
         public static final int DEFAULT_CURRENT_DAYS = 14;
         public static final int DEFAULT_SAVINGS_DAYS = 45;
         public static final int DEFAULT_INVESTMENT_DAYS = 100;
         public static final int DEFAULT_DEBT_DAYS = 100;
+        public static final int DEFAULT_AFTER_TAX_HOURS = 48;
 
         public Limits {
-            if (bankSyncHours < 1 || currentDays < 1 || savingsDays < 1 || investmentDays < 1 || debtDays < 1) {
+            if (bankSyncHours < 1 || currentDays < 1 || savingsDays < 1 || investmentDays < 1 || debtDays < 1 || afterTaxHours < 1) {
                 throw new IllegalArgumentException("Every freshness limit under finances.freshness must be 1 or more.");
             }
         }
 
+        /** The limits of the balances, with the default limit for the after-tax source. */
+        public Limits(int bankSyncHours, int currentDays, int savingsDays, int investmentDays, int debtDays) {
+            this(bankSyncHours, currentDays, savingsDays, investmentDays, debtDays, DEFAULT_AFTER_TAX_HOURS);
+        }
+
         public static Limits defaults() {
             return new Limits(DEFAULT_BANK_SYNC_HOURS, DEFAULT_CURRENT_DAYS, DEFAULT_SAVINGS_DAYS, DEFAULT_INVESTMENT_DAYS,
-                    DEFAULT_DEBT_DAYS);
+                    DEFAULT_DEBT_DAYS, DEFAULT_AFTER_TAX_HOURS);
+        }
+
+        public Duration afterTax() {
+            return Duration.ofHours(afterTaxHours);
         }
 
         public Duration bankSync() {
@@ -95,6 +109,27 @@ public final class Freshness {
         long days = ChronoUnit.DAYS.between(balanceDate, today);
         if (days > limitDays) {
             return Optional.of(new Stale(Reason.NOT_UPDATED, Duration.ofDays(days), null));
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * The after-tax value (issue #18). A failed newest fetch wins over an old {@code as_of}: it is the newest news and says
+     * why. The age is counted from the value's own {@code as_of}, not from when it was received; one in the (tolerated)
+     * future is zero days old.
+     *
+     * @param asOf when the source calculated the newest stored value, or null when there is none yet
+     * @param lastFailure the short reason code of the newest fetch when it failed, else null
+     */
+    public static Optional<Stale> afterTax(Instant now, Instant asOf, String lastFailure, Duration limit) {
+        if (lastFailure != null && asOf != null) {
+            return Optional.of(new Stale(Reason.SOURCE_FAILED, Duration.ZERO, lastFailure));
+        }
+        if (asOf != null) {
+            Duration age = Duration.between(asOf, now);
+            if (age.compareTo(limit) > 0) {
+                return Optional.of(new Stale(Reason.SOURCE_OLD, age, null));
+            }
         }
         return Optional.empty();
     }

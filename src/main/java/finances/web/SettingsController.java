@@ -5,6 +5,7 @@ import finances.backup.BackupService;
 import finances.backup.PreparedBackup;
 import finances.backup.RestorePlan;
 import finances.outbound.BankApiException;
+import finances.sync.AfterTaxService;
 import finances.sync.BankStatus;
 import finances.sync.LinkException;
 import jakarta.servlet.http.HttpServletResponse;
@@ -37,17 +38,20 @@ class SettingsController {
 
     private final BackupService backups;
     private final BankStatus bank;
+    private final AfterTaxService afterTax;
     private final Clock clock;
 
-    SettingsController(BackupService backups, BankStatus bank, Clock clock) {
+    SettingsController(BackupService backups, BankStatus bank, AfterTaxService afterTax, Clock clock) {
         this.backups = backups;
         this.bank = bank;
+        this.afterTax = afterTax;
         this.clock = clock;
     }
 
     @GetMapping("/settings")
     String settings(@RequestParam(required = false) String done, @RequestParam(required = false) String failed,
-            @RequestParam(required = false) String bank, @RequestParam(required = false) String bankFailed, Model model) {
+            @RequestParam(required = false) String bank, @RequestParam(required = false) String bankFailed,
+            @RequestParam(required = false) String afterTax, Model model) {
         String notice = done == null ? null : "backup.done." + (done.equals("undone") ? "undone" : "restored");
         if (bank != null) {
             notice = switch (bank) {
@@ -63,7 +67,8 @@ class SettingsController {
             }
         }
         error = bankError(bankFailed, error);
-        return settingsPage(model, notice, error);
+        String testNotice = AfterTaxViews.testNotice(afterTax);
+        return settingsPage(model, notice, error, testNotice);
     }
 
     /** Only a reason this application names becomes a message: whatever else is in the address is ignored. */
@@ -85,13 +90,32 @@ class SettingsController {
     }
 
     private String settingsPage(Model model, String notice, String error) {
+        return settingsPage(model, notice, error, null);
+    }
+
+    private String settingsPage(Model model, String notice, String error, String afterTaxNotice) {
         model.addAttribute("bank", BankViews.settings(bank, clock.getZone()));
+        model.addAttribute("afterTax", AfterTaxViews.section(afterTax, clock, afterTaxNotice));
         model.addAttribute("hasPrevious", backups.hasPrevious());
         model.addAttribute("previousFrom", backups.previousFrom().map(this::moment).orElse(""));
         model.addAttribute("undoWord", BackupService.UNDO_WORD);
         model.addAttribute("notice", notice);
         model.addAttribute("error", error);
         return "settings";
+    }
+
+    // ----- after-tax source
+
+    /** Fetches the source once and waits for the answer (the exchange has a hard cap); a valid answer is stored like any other. */
+    @PostMapping("/settings/after-tax/test")
+    String testAfterTax() {
+        AfterTaxService.TestResult result = afterTax.test();
+        return "redirect:/settings" + switch (result) {
+            case OK -> "?afterTax=ok";
+            case FAILED -> "?afterTax=failed";
+            case BUSY -> "?afterTax=busy";
+            case NOT_CONFIGURED -> "";
+        };
     }
 
     // ----- download

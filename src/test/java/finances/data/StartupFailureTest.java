@@ -45,4 +45,18 @@ class StartupFailureTest {
                     .hasMessageContaining("already in use");
         }
     }
+
+    @Test
+    void anAfterTaxLimitBelowOneStopsTheStartWithoutStartingTheApplication() {
+        assertThatThrownBy(() -> new SpringApplicationBuilder(FinancesApplication.class).web(WebApplicationType.NONE)
+                .run("--finances.data-dir=" + temp, "--finances.freshness.after-tax-hours=0"))
+                .rootCause().hasMessageContaining("finances.freshness");
+    }
+
+    @Test
+    void anAfterTaxAddressWithAQueryStopsTheStartNamingThePropertyAndNotTheAddress() {
+        assertThatThrownBy(() -> new SpringApplicationBuilder(FinancesApplication.class).web(WebApplicationType.NONE)
+                .run("--finances.data-dir=" + temp, "--finances.outbound.after-tax.url=https://example.com/x?key=secret-value"))
+                .rootCause().hasMessageContaining("finances.outbound.after-tax.url").hasMessageNotContaining("secret-value");
+    }
 }

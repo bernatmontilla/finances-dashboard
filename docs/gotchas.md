@@ -70,6 +70,11 @@ mention the test here.
   template or a view. A new place that shows a balance shows its age and the `stale` fragment. The overview's line at the top counts the
   accounts of `accounts.list(false)` only (archived ones are not marked). A test that depends on "now" builds its data from the clock.
 
+- After-tax source (#18): the request is `finances.outbound.AfterTaxClient` only; the whole exchange (headers and body) has the 10 s cap
+  because `HttpRequest.timeout` stops at the headers: the body is read on a second thread that is cut off by closing the stream. A fetch
+  runs on its own thread and flag, never under `BankSyncService`'s lock. A message containing an apostrophe is HTML-escaped in a page, so
+  a test that looks for the text of a message must avoid it.
+
 ## The target machine
 
 - Low memory, possibly shared with other services: the heap cap is real. Stream large result sets.

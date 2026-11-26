@@ -165,7 +165,7 @@ you may read it (`chmod 700`), and updates never touch it.
 | `secrets/enable-banking-application-id` | the id of your Enable Banking application (you put it there) | **no, on purpose** |
 | `secrets/enable-banking-key.pem` | the application's private key (you put it there) | **no, on purpose** |
 | `secrets/enable-banking-session-<n>` | the session id of bank consent `<n>`, written by the app | **no, on purpose** |
-| secret files still to come | the after-tax token | **no, on purpose** |
+| `secrets/after-tax-token` | the token of the after-tax source, optional (you put it there) | **no, on purpose** |
 
 The secret files are plain files in the data folder, readable by the service user only, never in a
 log and never in a backup file. Each issue that adds one lists it in this table.
@@ -245,6 +245,55 @@ Nothing here is specific to an installation: `<host>`, `<application id>` and 80
 
 The secret files are **not in a backup**. After restoring on another machine the consents show *consent expired*: renew
 them, or copy the files of the table above by hand.
+
+## Connecting an after-tax source
+
+The dashboard does no tax calculation. For the business side it reads one number, *after-tax available*, from an
+external bookkeeping tool through `docs/contracts/after-tax-source.md`. Without a source nothing about a business number is shown.
+
+1. **The address.** Set `finances.outbound.after-tax.url` (environment variable `FINANCES_OUTBOUND_AFTER_TAX_URL`) to the
+   endpoint, for example `https://<host>/after-tax`. It must be an `http` or `https` address of a host, with no user name,
+   no query and no `#` part (a key does not belong in the address: use the token). A host on this machine or on your private
+   network is the normal case and is allowed because you configured it. Anything else stops the application at start
+   with a message that names the property and not its value. Nothing is ever sent to any other host.
+2. **The token** (only when the source wants one). Put it in `secrets/after-tax-token` in the data folder, one line,
+   readable by the service user only:
+
+   ```bash
+   install -m 600 /dev/null ~/finances-dashboard/data/secrets/after-tax-token
+   printf '%s\n' '<token>' > ~/finances-dashboard/data/secrets/after-tax-token
+   ```
+
+   It is sent as `Authorization: Bearer <token>` and read again on every fetch, so a changed token needs no restart. Without
+   the file no `Authorization` header is sent. A token that holds anything but visible characters (a line break in the middle,
+   a space) is not sent: the fetch fails with *the token file cannot be sent as it is*. The token is never shown on a page,
+   never logged and never in a backup. Over plain `http` to a host that is not this machine the token travels unencrypted:
+   the settings page warns about it; use `https` or a host on this machine.
+3. **Try it.** *Settings*, *After-tax source*, **Test the source** fetches once, waits for the answer (at most 10 seconds)
+   and shows the value with the moment the source calculated it and its age, or the reason it could not be used. A valid answer
+   is stored like any other. The source is also fetched with the daily sync and with *Sync now*, on its own thread: a slow
+   or hanging source never delays the bank sync.
+4. **What the section shows.** Whether a source and a token are configured (never the address or the token), the last value,
+   the gross balance and the reserved lines when the source sends them, a warning when gross minus reserved is not the
+   available amount, the last ten fetches, and the *Stale* mark with its reason: the last fetch failed (the last good value
+   is kept), or the value's own moment is older than `finances.freshness.after-tax-hours` (48 by default). Every distinct
+   value received is kept with its moment, so later versions can chart it.
+
+**Trying it with a static file.** A static file served on this machine is a valid source. Make the file with a recent
+`as_of` (an old one is shown as stale) and serve it on the loopback address:
+
+```bash
+mkdir -p /tmp/after-tax && cd /tmp/after-tax
+printf '{"contract_version": 1, "as_of": "%s", "currency": "EUR", "available_cents": 1234500, "gross_balance_cents": 2000000, "reserved": [{"label": "VAT", "amount_cents": 420000}, {"label": "Income tax", "amount_cents": 345500}]}\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > after-tax.json
+python3 -m http.server 8099 --bind 127.0.0.1
+# then: finances.outbound.after-tax.url=http://127.0.0.1:8099/after-tax.json
+```
+
+Press *Test the source*: the page shows €12,345.00, the gross balance of €20,000.00 and the two reserved lines. Stop the
+web server and press the button again: the same value is shown as *Stale* with *the source could not be reached*. A
+source that does not follow the contract is refused with a reason (the amounts must be JSON integers, the currency `EUR`, the
+version `1`; a moment more than five minutes in the future is refused too).
 
 ## Backup and restore
 

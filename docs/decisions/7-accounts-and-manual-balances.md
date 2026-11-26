@@ -50,8 +50,8 @@
   that belongs to another account is `404`, not edited.
 - **No login, so a same-site check** (`SameOriginFilter`): a request that changes something and
   carries `Sec-Fetch-Site` other than `same-origin` or `none` gets 403. Without it, any page in the
-  owner's browser could post a form to the dashboard. It does not look at `Origin` or `Host`, so a
-  reverse proxy that rewrites the host (a private-network `serve`) is not affected. Not a new dependency.
+  owner's browser could post a form to the dashboard. (Since #46 a request without that header is checked by `Origin`: `46-error-page-and-origin-check.md`.)
+  Not a new dependency.
 - **Templates** take texts from `messages.properties`; scope and kind labels come as message keys
   from `AccountViews`, because the guard test would flag a literal `value="private"`.
 - **Not done on purpose**: totals and headline numbers, transactions, CSV and bank (other issues).

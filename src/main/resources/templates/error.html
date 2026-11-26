@@ -1,18 +1,18 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" th:with="kind=${status == 404 ? 'notfound' : (status == 403 ? 'forbidden' : 'general')}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title th:text="#{error.page.title}"></title>
+  <title th:text="#{'error.' + ${kind} + '.title'}"></title>
   <link rel="stylesheet" th:href="@{/app.css}">
 </head>
 <body>
   <main>
     <nav th:replace="~{fragments :: nav}"></nav>
-    <h1 th:text="#{error.page.title}"></h1>
-    <p th:text="#{error.page.text}"></p>
-    <p><a th:href="@{/accounts}" th:text="#{error.page.back}"></a></p>
+    <h1 th:text="#{'error.' + ${kind} + '.title'}"></h1>
+    <p th:text="#{'error.' + ${kind} + '.text'}"></p>
+    <p><a th:href="@{/}" th:text="#{error.page.back}"></a></p>
   </main>
 </body>
 </html>

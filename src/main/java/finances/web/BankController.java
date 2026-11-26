@@ -5,6 +5,7 @@ import finances.accounts.AccountException;
 import finances.accounts.AccountService;
 import finances.accounts.Kind;
 import finances.accounts.Scope;
+import finances.sync.AfterTaxService;
 import finances.sync.BankAccountLink;
 import finances.sync.BankLinkService;
 import finances.sync.BankStatus;
@@ -44,14 +45,17 @@ class BankController {
 
     private final BankLinkService links;
     private final BankSyncService sync;
+    private final AfterTaxService afterTax;
     private final BankStatus status;
     private final AccountService accounts;
     private final Clock clock;
 
-    BankController(BankLinkService links, BankSyncService sync, BankStatus status, AccountService accounts, Clock clock) {
+    BankController(BankLinkService links, BankSyncService sync, AfterTaxService afterTax, BankStatus status, AccountService accounts,
+            Clock clock) {
         this.clock = clock;
         this.links = links;
         this.sync = sync;
+        this.afterTax = afterTax;
         this.status = status;
         this.accounts = accounts;
     }
@@ -219,6 +223,7 @@ class BankController {
 
     @PostMapping("/sync")
     String syncNow(HttpServletRequest request) {
+        afterTax.start(AfterTaxService.Trigger.USER); // first, and on its own thread: also without a bank, and never waited for
         SyncSummary summary = sync.syncAll(SyncTrigger.USER, BankViews.userHeaders(request));
         return "redirect:/?sync=" + (summary.state() == SyncSummary.State.DONE ? (summary.failed() > 0 ? "failed" : "done")
                 : summary.state() == SyncSummary.State.BUSY ? "busy" : "notConfigured")

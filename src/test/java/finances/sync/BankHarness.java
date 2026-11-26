@@ -27,6 +27,7 @@ final class BankHarness implements AutoCloseable {
     final DataFolder dataFolder;
     final Path folder;
     final JdbcClient jdbc;
+    final DataSourceTransactionManager manager;
     final AccountService accounts;
     final TransactionService transactions;
     final BankStore store;
@@ -47,7 +48,7 @@ final class BankHarness implements AutoCloseable {
         dataSource.setUrl("jdbc:sqlite:" + dataFolder.databaseFile());
         Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
         this.jdbc = JdbcClient.create(dataSource);
-        DataSourceTransactionManager manager = new DataSourceTransactionManager(dataSource);
+        this.manager = new DataSourceTransactionManager(dataSource);
         this.accounts = new AccountService(jdbc, clock);
         this.transactions = new TransactionService(jdbc, clock, manager);
         this.store = new BankStore(jdbc);

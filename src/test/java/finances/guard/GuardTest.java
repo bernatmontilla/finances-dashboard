@@ -166,6 +166,7 @@ class GuardTest {
         code.addAll(files(MAIN.resolve("java/finances/outbound")));
         code.add(MAIN.resolve("java/finances/web/BankController.java"));
         code.add(MAIN.resolve("java/finances/web/BankViews.java"));
+        code.add(MAIN.resolve("java/finances/web/AfterTaxViews.java"));
         for (Path file : code) {
             if (!file.toString().endsWith(".java")) {
                 continue;

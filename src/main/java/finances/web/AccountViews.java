@@ -136,6 +136,11 @@ final class AccountViews {
                     ? new StaleView("stale.reason.sync_old.days", stale.age().toDays(), null)
                     : new StaleView("stale.reason.sync_old.hours", stale.age().toHours(), null);
             case NOT_UPDATED -> new StaleView("stale.reason.not_updated", stale.age().toDays(), null);
+            case SOURCE_FAILED -> new StaleView("stale.reason.source_failed", null,
+                    "aftertax.reason." + (stale.detail() == null ? "unexpected" : stale.detail()));
+            case SOURCE_OLD -> stale.age().toHours() >= 48
+                    ? new StaleView("stale.reason.source_old.days", stale.age().toDays(), null)
+                    : new StaleView("stale.reason.source_old.hours", stale.age().toHours(), null);
         };
     }
 

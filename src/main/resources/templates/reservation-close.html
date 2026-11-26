@@ -26,7 +26,7 @@
               <span class="muted" th:text="${candidate.account}"></span>
               <span th:if="${candidate.counterparty != null}" th:text="${candidate.counterparty}"></span>
               <span class="muted" th:if="${!candidate.description.isEmpty()}" th:text="${candidate.description}"></span>
-              <strong th:if="${candidate.likely}" th:text="#{reservation.close.likely}"></strong>
+              <strong class="balance" th:if="${candidate.likely}" th:text="#{reservation.close.likely}"></strong>
             </span>
           </label>
         </li>

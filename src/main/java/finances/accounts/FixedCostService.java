@@ -534,7 +534,8 @@ public class FixedCostService {
         Map<String, Long> links = new HashMap<>();
         jdbc.sql("select fixed_cost_id || ' ' || month, transaction_id from fixed_cost_match where month >= ?").param(from)
                 .query((rs, row) -> links.put(rs.getString(1), rs.getLong(2))).list();
-        Set<String> kept = new HashSet<>(jdbc.sql("select fixed_cost_id || ' ' || transaction_id from fixed_cost_price_kept")
+        Set<String> kept = new HashSet<>(jdbc.sql("select fixed_cost_id || ' ' || transaction_id || ' ' || amount_cents from fixed_cost_price_kept "
+                + "where amount_cents is not null")
                 .query(String.class).list());
         Map<Long, LocalDate> newestBooked = new HashMap<>();
         jdbc.sql("select account_id, max(booking_date) from transactions where status = 'booked' group by account_id")
@@ -614,7 +615,7 @@ public class FixedCostService {
             }
         }
         if (latest == null || latest.cents() >= 0 || latest.cents() == Long.MIN_VALUE
-                || context.kept().contains(cost.id() + " " + latest.id())) {
+                || context.kept().contains(cost.id() + " " + latest.id() + " " + -latest.cents())) {
             return Optional.empty();
         }
         long gap = ReservationService.amountGap(-latest.cents(), cost.amount().cents());
@@ -727,12 +728,15 @@ public class FixedCostService {
                 cost.counterpartyIban(), cost.accountId());
     }
 
-    /** Keeps the stored amount: the flagged charge is accepted at its price. A later charge with another price is flagged again. */
+    /**
+     * Keeps the stored amount: the flagged charge is accepted at its price, and that price is stored with it. A later charge with
+     * another price is flagged again, and so is the same charge when the bank corrects its amount (issue #71).
+     */
     @Transactional
     public void keepAmount(long id, long transactionId) {
-        requirePriceFlag(get(id), transactionId);
-        jdbc.sql("insert or ignore into fixed_cost_price_kept (fixed_cost_id, transaction_id, kept_at) values (?, ?, ?)")
-                .params(id, transactionId, now()).update();
+        FixedCostFlag flag = requirePriceFlag(get(id), transactionId);
+        jdbc.sql("insert or replace into fixed_cost_price_kept (fixed_cost_id, transaction_id, kept_at, amount_cents) values (?, ?, ?, ?)")
+                .params(id, transactionId, now(), flag.charged().orElseThrow().cents()).update();
     }
 
     private void requireMissingFlag(FixedCost cost, YearMonth month) {

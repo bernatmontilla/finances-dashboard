@@ -1,6 +1,7 @@
 package finances.sync;
 
 import finances.accounts.AccountService;
+import finances.accounts.FixedCostProposalService;
 import finances.accounts.FixedCostService;
 import finances.accounts.TransactionService;
 import finances.data.DataFolder;
@@ -34,6 +35,7 @@ final class BankHarness implements AutoCloseable {
     final BankStore store;
     final SessionFiles sessions;
     final FixedCostService fixedCosts;
+    final FixedCostProposalService proposals;
     final BankSyncService sync;
     final BankLinkService link;
     final BankStatus status;
@@ -57,7 +59,8 @@ final class BankHarness implements AutoCloseable {
         this.sessions = new SessionFiles(dataFolder);
         EnableBankingClient client = new EnableBankingClient(new ApplicationCredentials(dataFolder), clock, bank.baseUrl(), 10);
         this.fixedCosts = new FixedCostService(jdbc, clock, accounts, transactions);
-        this.sync = new BankSyncService(client, store, sessions, accounts, transactions, fixedCosts, clock, manager, 7);
+        this.proposals = new FixedCostProposalService(jdbc, clock, accounts, manager);
+        this.sync = new BankSyncService(client, store, sessions, accounts, transactions, fixedCosts, proposals, clock, manager, 7);
         this.link = new BankLinkService(client, store, sessions, accounts, sync, clock, manager, REDIRECT);
         this.status = new BankStatus(store, client, REDIRECT);
     }

@@ -464,7 +464,7 @@ public class FixedCostService {
     }
 
     /** A transaction's IBAN as the stored fixed cost IBAN is written: no white space, upper case. Not validated: the bank's text is used. */
-    private static String compactIban(String iban) {
+    static String compactIban(String iban) {
         return iban == null ? null : iban.replaceAll("\\s+", "").toUpperCase(java.util.Locale.ROOT);
     }
 

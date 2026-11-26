@@ -71,7 +71,13 @@ one big bill you can see coming, not both for the same expense.
 A fixed cost with a counterparty also tells you when something is off, and never changes by itself: a **price change** (the latest charge is
 more than 10 % from the stored amount: take over the new price or keep the old one) and a **missing** charge (nothing arrived within 7 days
 of its date, after a delivery that should have had it: mark it paid, skip this period or end the fixed cost). The overview shows one line
-when any are open.
+when any are open (price changes and missing charges, and the proposals below).
+
+After each sync and import the app also looks for fixed costs you did not enter: booked spending to one counterparty that comes back every
+month, two months, quarter, half year or year at about the same amount (within 10 %; at least three charges, two for half-yearly and yearly,
+and still running). They are listed on the *Fixed costs* page as **proposals**, with when the latest charge was booked. *Add as fixed cost*
+opens the add form filled in; *Not a fixed cost* hides the proposal until the price changes by more than 10 %, and the rejection can be
+undone on the same page. A proposal changes no number until you add it, and a counterparty that already has a fixed cost is never proposed.
 
 `GET /health` answers `200` with `{"status":"ok","version":"…"}` when the database is reachable, and `503` with `{"status":"unavailable","version":"…"}` otherwise.
 

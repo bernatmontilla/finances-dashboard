@@ -117,6 +117,26 @@ final class FixedCostViews {
         }
     }
 
+    /**
+     * A proposal (issue #71): what repeating transactions suggest. {@code latestBooked} is the booking date of its latest charge, its
+     * age (hard rule 9); {@code scopeKey} is the message key of its scope.
+     */
+    record ProposalRow(long id, String name, String amount, String rhythmKey, String scopeKey, int charges, String latestBooked) {
+    }
+
+    /** A rejected proposal, kept until the owner undoes it. */
+    record RejectionRow(long id, String name, String amount, String scopeKey) {
+    }
+
+    static ProposalRow proposalRow(finances.accounts.FixedCostProposal proposal) {
+        return new ProposalRow(proposal.id(), proposal.name(), proposal.amount().format(), "rhythm." + proposal.rhythm().code(),
+                "scope." + proposal.scope().code(), proposal.charges(), proposal.latestBooked().toString());
+    }
+
+    static RejectionRow rejectionRow(finances.accounts.FixedCostRejection rejection) {
+        return new RejectionRow(rejection.id(), rejection.name(), rejection.amount().format(), "scope." + rejection.scope().code());
+    }
+
     /** The fixed costs of one scope: totals, then the running ones, the paused ones and the ended ones. */
     record Group(String slug, String labelKey, String perMonth, String perYear, List<Row> running, List<Row> paused, List<Row> ended,
             Basis basis) {

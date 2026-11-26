@@ -55,7 +55,8 @@
         <span class="muted" th:if="${standing.hasPerMonth()}" th:text="#{reservation.perMonth(${standing.perMonth})}"></span>
         <span class="muted" th:unless="${standing.hasPerMonth()}" th:text="#{reservation.isDue}"></span>
       </p>
-      <form method="post" th:action="@{/reservations/{id}/reserved(id=${reservation.id})}">
+      <p th:unless="${standing.hasPerMonth()}" class="notice" th:text="#{reservation.setReservedDue}"></p>
+      <form th:if="${standing.hasPerMonth()}" method="post" th:action="@{/reservations/{id}/reserved(id=${reservation.id})}">
         <p>
           <label for="setReserved" th:text="#{reservation.field.setReserved}"></label>
           <input id="setReserved" name="reserved" type="text" inputmode="decimal" autocomplete="off" required th:value="${reserved}">

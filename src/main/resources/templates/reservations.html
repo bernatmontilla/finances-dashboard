@@ -27,6 +27,7 @@
           <span class="muted" th:unless="${row.hasPerMonth()}" th:text="#{reservation.isDue}"></span>
           <span class="actions">
             <a th:href="@{/reservations/{id}/edit(id=${row.id})}" th:text="#{reservation.edit}"></a>
+            <a th:href="@{/reservations/{id}/close(id=${row.id})}" th:text="#{reservation.closeAgainst}"></a>
             <form method="post" th:action="@{/reservations/{id}/close(id=${row.id})}" class="inline">
               <button type="submit" class="secondary" th:text="#{reservation.close}"></button>
             </form>
@@ -42,6 +43,11 @@
             <span th:if="${row.yearly}" class="muted" th:text="#{reservation.yearly.mark}"></span>
             <span class="amount" th:text="${row.amount}"></span>
             <span class="muted" th:text="#{reservation.closedOn(${row.closedOn})}"></span>
+            <th:block th:if="${row.hasPayment()}">
+              <span class="muted" th:text="#{reservation.paid(${row.payment.paid}, ${row.payment.date}, ${row.payment.account})}"></span>
+              <strong th:if="${row.hasDifferenceAmount()}" th:text="#{${row.differenceKey}(${row.difference})}"></strong>
+              <strong th:unless="${row.hasDifferenceAmount()}" th:text="#{${row.differenceKey}}"></strong>
+            </th:block>
             <form method="post" th:action="@{/reservations/{id}/reopen(id=${row.id})}" class="inline">
               <button type="submit" class="link" th:text="#{reservation.reopen}"></button>
             </form>

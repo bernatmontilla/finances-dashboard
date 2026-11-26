@@ -362,6 +362,20 @@ public class TransactionService {
         return new TransactionPage(more ? rows.subList(0, PAGE_SIZE) : rows, number, more);
     }
 
+    /**
+     * The booked spending (negative amounts) of the accounts of a scope, archived ones included, booked from {@code from} to
+     * {@code to} (both days included), newest first, at most {@code limit} of them. What a reservation can be closed against
+     * (issue #51): pending rows are left out, because a bank sync may remove one.
+     */
+    public List<Transaction> bookedSpending(Scope scope, LocalDate from, LocalDate to, int limit) {
+        return jdbc.sql(SELECT + """
+                 where a.scope = ? and t.status = 'booked' and t.amount_cents < 0 and t.booking_date >= ? and t.booking_date <= ?
+                 order by t.booking_date desc, t.id desc limit ?""")
+                .params(scope.code(), from.toString(), to.toString(), limit)
+                .query((rs, row) -> transaction(rs))
+                .list();
+    }
+
     public Transaction get(long id) {
         return jdbc.sql(SELECT + " where t.id = ?")
                 .param(id)

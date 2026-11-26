@@ -18,6 +18,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.sqlite.SQLiteConfig;
 import org.sqlite.SQLiteDataSource;
 
@@ -29,6 +30,8 @@ class ReservationServiceTest {
 
     private TestClock clock;
     private ReservationService reservations;
+    private AccountService accounts;
+    private TransactionService transactions;
     private JdbcClient jdbc;
 
     @BeforeEach
@@ -40,7 +43,9 @@ class ReservationServiceTest {
         Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
         jdbc = JdbcClient.create(dataSource);
         clock = new TestClock(JAN_1);
-        reservations = new ReservationService(jdbc, clock, new AccountService(jdbc, clock));
+        accounts = new AccountService(jdbc, clock);
+        transactions = new TransactionService(jdbc, clock, new DataSourceTransactionManager(dataSource));
+        reservations = new ReservationService(jdbc, clock, accounts, transactions);
     }
 
     private static Money eur(String typed) {
@@ -206,12 +211,13 @@ class ReservationServiceTest {
         assertThat(changed.anchorAmount()).isEqualTo(eur("1000.00"));
         assertThat(changed.changedAt()).isNotNull();
         assertThat(reserved(changed)).isEqualTo(eur("1000.00"));
-        clock.set(DEC_31);
-        assertThat(reserved(changed)).isEqualTo(eur("1200.00"));
 
         assertRefused(Reason.RESERVED_OUT_OF_RANGE, () -> reservations.setReserved(created.id(), eur("1200.01")));
         assertRefused(Reason.RESERVED_OUT_OF_RANGE, () -> reservations.setReserved(created.id(), eur("-0.01")));
         assertThat(reservations.setReserved(created.id(), Money.zero()).anchorAmount()).isEqualTo(Money.zero());
+        // From the due date on setting it is refused (issue #51), so the full amount is checked on the day itself, after the rest.
+        clock.set(DEC_31);
+        assertThat(reserved(created)).isEqualTo(eur("1200.00"));
     }
 
     @Test
@@ -303,15 +309,24 @@ class ReservationServiceTest {
     }
 
     @Test
-    void removingAReservationThatANextRoundFollowsLeavesTheRoundUnlinked() {
+    void removingAClosedReservationIsRefusedSoItsRoundsAndHistoryStay() {
         Reservation created = reservations.create("Example Insurance premium", Scope.PRIVATE, eur("1200.00"), DEC_31, true, null);
         reservations.close(created.id());
         Reservation next = reservations.open(Scope.PRIVATE).getFirst();
 
+        assertRefused(Reason.CLOSED, () -> reservations.remove(created.id()));
+
+        assertThat(reservations.find(created.id())).isPresent();
+        assertThat(reservations.get(next.id()).followsId()).isEqualTo(created.id());
+    }
+
+    @Test
+    void anOpenReservationCanBeRemoved() {
+        Reservation created = premium();
+
         reservations.remove(created.id());
 
         assertThat(reservations.find(created.id())).isEmpty();
-        assertThat(reservations.get(next.id()).followsId()).isNull();
         assertRefused(Reason.NOT_FOUND, () -> reservations.remove(created.id()));
     }
 
@@ -319,6 +334,306 @@ class ReservationServiceTest {
     void aMissingReservationIsNotFound() {
         assertRefused(Reason.NOT_FOUND, () -> reservations.get(42));
         assertRefused(Reason.NOT_FOUND, () -> reservations.close(42));
+    }
+
+    // ----- setting what is reserved by hand
+
+    @Test
+    void settingWhatIsReservedIsRefusedOnTheDueDayAndWhenOverdueAndStillWorksTheDayBefore() {
+        Reservation created = reservations.create("Holiday", Scope.PRIVATE, eur("1200.00"), JAN_1.plusDays(30), false, null);
+
+        clock.set(JAN_1.plusDays(29));
+        reservations.setReserved(created.id(), eur("300.00"));
+        assertThat(reservations.get(created.id()).anchorAmount()).isEqualTo(eur("300.00"));
+
+        clock.set(JAN_1.plusDays(30));
+        assertRefused(Reason.DUE_NOT_SETTABLE, () -> reservations.setReserved(created.id(), eur("400.00")));
+        clock.set(JAN_1.plusDays(45));
+        assertRefused(Reason.DUE_NOT_SETTABLE, () -> reservations.setReserved(created.id(), eur("400.00")));
+
+        assertThat(reservations.get(created.id()).anchorAmount()).isEqualTo(eur("300.00"));
+        assertThat(reservations.get(created.id()).anchorDate()).isEqualTo(JAN_1.plusDays(29));
+    }
+
+    // ----- closing against a payment (issue #51)
+
+    private Account everydayAccount;
+    private Account businessAccount;
+
+    /** The private current account, created on first use. */
+    private Account everyday() {
+        if (everydayAccount == null) {
+            everydayAccount = accounts.addManual("Everyday", Scope.PRIVATE, Kind.CURRENT, "NL51XMPL0000000001");
+        }
+        return everydayAccount;
+    }
+
+    private Account business() {
+        if (businessAccount == null) {
+            businessAccount = accounts.addManual("Business", Scope.BUSINESS, Kind.CURRENT, "NL94XMPL0000000003");
+        }
+        return businessAccount;
+    }
+
+    private long deliver(Account account, LocalDate date, long cents, TransactionStatus status, String reference) {
+        DeliveredTransaction delivered = new DeliveredTransaction(date, null, cents, "EUR", "Example Insurance", "NL10SHOP0000000101",
+                "Premium", status, status == TransactionStatus.BOOKED ? reference : null, "raw:" + reference);
+        transactions.deliver(account.id(), Source.CSV, List.of(delivered));
+        return jdbc.sql("select max(id) from transactions where account_id = ?").param(account.id()).query(Long.class).single();
+    }
+
+    private long spend(Account account, LocalDate date, long cents, String reference) {
+        return deliver(account, date, -cents, TransactionStatus.BOOKED, reference);
+    }
+
+    private Long link(Reservation reservation) {
+        return reservations.get(reservation.id()).transactionId();
+    }
+
+    @Test
+    void aReservationClosedAgainstABookedPaymentKeepsTheLink() {
+        Reservation created = premium();
+        long payment = spend(everyday(), JAN_1.minusDays(2), 123456, "REF-1");
+
+        Reservation closed = reservations.close(created.id(), payment);
+
+        assertThat(closed.isOpen()).isFalse();
+        assertThat(closed.transactionId()).isEqualTo(payment);
+        assertThat(link(created)).isEqualTo(payment);
+    }
+
+    @Test
+    void closingWithoutATransactionLeavesTheLinkEmpty() {
+        Reservation first = premium();
+        Reservation second = reservations.create("Second", Scope.PRIVATE, eur("10.00"), DEC_31, false, null);
+
+        assertThat(reservations.close(first.id()).transactionId()).isNull();
+        assertThat(reservations.close(second.id(), null).transactionId()).isNull();
+    }
+
+    @Test
+    void aPaymentThatCannotSettleItIsRefusedAndNothingChanges() {
+        Reservation created = premium();
+        Account everyday = everyday();
+        long pending = deliver(everyday, JAN_1, -5000, TransactionStatus.PENDING, "REF-P");
+        long income = deliver(everyday, JAN_1, 5000, TransactionStatus.BOOKED, "REF-I");
+        long otherScope = spend(business(), JAN_1, 5000, "REF-B");
+
+        assertRefused(Reason.TRANSACTION_NOT_BOOKED, () -> reservations.close(created.id(), pending));
+        assertRefused(Reason.TRANSACTION_NOT_SPENDING, () -> reservations.close(created.id(), income));
+        assertRefused(Reason.TRANSACTION_OUT_OF_SCOPE, () -> reservations.close(created.id(), otherScope));
+        assertRefused(Reason.TRANSACTION_NOT_FOUND, () -> reservations.close(created.id(), 9999L));
+
+        assertThat(reservations.get(created.id()).isOpen()).isTrue();
+        assertThat(link(created)).isNull();
+    }
+
+    @Test
+    void closingAClosedReservationAgainIsRefusedAndKeepsTheFirstLink() {
+        Reservation created = premium();
+        Account everyday = everyday();
+        long first = spend(everyday, JAN_1, 100, "REF-1");
+        long second = spend(everyday, JAN_1, 200, "REF-2");
+        reservations.close(created.id(), first);
+
+        assertRefused(Reason.ALREADY_CLOSED, () -> reservations.close(created.id(), second));
+
+        assertThat(link(created)).isEqualTo(first);
+        assertRefused(Reason.NOT_FOUND, () -> reservations.close(42, first));
+    }
+
+    @Test
+    void aPaymentFromAnArchivedAccountOfTheScopeIsAccepted() {
+        Reservation created = premium();
+        Account everyday = everyday();
+        long payment = spend(everyday, JAN_1, 100, "REF-1");
+        accounts.archive(everyday.id());
+
+        assertThat(reservations.close(created.id(), payment).transactionId()).isEqualTo(payment);
+    }
+
+    @Test
+    void oneTransactionCanSettleTwoReservations() {
+        Reservation one = premium();
+        Reservation two = reservations.create("Second", Scope.PRIVATE, eur("10.00"), DEC_31, false, null);
+        long payment = spend(everyday(), JAN_1, 1210, "REF-1");
+
+        reservations.close(one.id(), payment);
+        reservations.close(two.id(), payment);
+
+        assertThat(link(one)).isEqualTo(payment);
+        assertThat(link(two)).isEqualTo(payment);
+    }
+
+    @Test
+    void closingAYearlyReservationAgainstAPaymentStartsAnUnlinkedNextRound() {
+        Reservation created = reservations.create("Example Insurance premium", Scope.PRIVATE, eur("1200.00"), DEC_31, true, null);
+        long payment = spend(everyday(), JAN_1, 120000, "REF-1");
+
+        reservations.close(created.id(), payment);
+
+        Reservation next = reservations.open(Scope.PRIVATE).getFirst();
+        assertThat(next.followsId()).isEqualTo(created.id());
+        assertThat(next.transactionId()).isNull();
+        assertThat(link(created)).isEqualTo(payment);
+    }
+
+    @Test
+    void reopeningClearsTheLinkAndClosingAgainWithoutAPaymentLeavesItEmpty() {
+        Reservation created = premium();
+        long payment = spend(everyday(), JAN_1, 120000, "REF-1");
+        reservations.close(created.id(), payment);
+
+        Reservation reopened = reservations.reopen(created.id());
+        assertThat(reopened.isOpen()).isTrue();
+        assertThat(reopened.transactionId()).isNull();
+
+        assertThat(reservations.close(created.id()).transactionId()).isNull();
+    }
+
+    @Test
+    void aRefusedReopeningKeepsTheLink() {
+        Reservation created = reservations.create("Yearly", Scope.PRIVATE, eur("100.00"), DEC_31, true, null);
+        long payment = spend(everyday(), JAN_1, 10000, "REF-1");
+        reservations.close(created.id(), payment);
+        Reservation next = reservations.open(Scope.PRIVATE).getFirst();
+        reservations.update(next.id(), "Renamed", Scope.PRIVATE, eur("100.00"), next.dueDate(), true);
+
+        assertRefused(Reason.NEXT_ROUND_CHANGED, () -> reservations.reopen(created.id()));
+
+        assertThat(link(created)).isEqualTo(payment);
+    }
+
+    @Test
+    void aBankSyncThatRemovesPendingRowsLeavesALinkedBookedRowAlone() {
+        Account bank = accounts.addFromBank("Everyday bank", Scope.PRIVATE, Kind.CURRENT, "NL51XMPL0000000001");
+        DeliveredTransaction booked = new DeliveredTransaction(JAN_1, null, -120000, "EUR", "Example Insurance", "NL10SHOP0000000101",
+                "Premium", TransactionStatus.BOOKED, "REF-1", "raw:1");
+        DeliveredTransaction pending = new DeliveredTransaction(JAN_1, null, -500, "EUR", "Corner Grocery", "NL80SHOP0000000102",
+                "Groceries", TransactionStatus.PENDING, null, "raw:2");
+        transactions.deliverFromBank(bank.id(), List.of(booked, pending), null);
+        long payment = transactions.forAccount(bank.id(), 0).items().stream().filter(t -> !t.pending()).findFirst().orElseThrow().id();
+        Reservation created = premium();
+        reservations.close(created.id(), payment);
+
+        var report = transactions.deliverFromBank(bank.id(), List.of(booked), null);
+
+        assertThat(report.pendingRemoved()).isEqualTo(1);
+        assertThat(transactions.get(payment).pending()).isFalse();
+        assertThat(link(created)).isEqualTo(payment);
+    }
+
+    // ----- the payments to pick from
+
+    private static final LocalDate DUE = LocalDate.of(2026, 3, 1);
+
+    /** A reservation of 100.00 due on {@link #DUE}, seen {@code daysAfterDue} days after it fell due. */
+    private Reservation rentSeen(int daysAfterDue) {
+        Reservation created = reservations.create("Rent", Scope.PRIVATE, eur("100.00"), DUE, false, null);
+        clock.set(DUE.plusDays(daysAfterDue));
+        return created;
+    }
+
+    private List<Long> candidateIds(Reservation reservation) {
+        return reservations.paymentCandidates(reservation.id()).stream().map(c -> c.transaction().id()).toList();
+    }
+
+    @Test
+    void theCandidatesAreTheBookedSpendingOfTheScopeInsideTheWindow() {
+        Reservation rent = rentSeen(5);
+        Account everyday = everyday();
+        long first = spend(everyday, DUE.minusDays(60), 5000, "REF-1");
+        spend(everyday, DUE.minusDays(61), 5000, "REF-2"); // the day before the window
+        long today = spend(everyday, DUE.plusDays(5), 5000, "REF-3");
+        spend(everyday, DUE.plusDays(6), 5000, "REF-4"); // after today
+        deliver(everyday, DUE, 5000, TransactionStatus.BOOKED, "REF-5"); // income
+        deliver(everyday, DUE, -5000, TransactionStatus.PENDING, "REF-6"); // pending
+        spend(business(), DUE, 5000, "REF-7"); // other scope
+
+        assertThat(candidateIds(rent)).containsExactlyInAnyOrder(first, today);
+    }
+
+    @Test
+    void theWindowStartsSixtyDaysBeforeTheDueDateOrBeforeTodayWhicheverIsEarlier() {
+        Reservation rent = rentSeen(0);
+        clock.set(DUE.minusDays(20)); // not due yet: the window starts before today
+        long early = spend(everyday(), DUE.minusDays(80), 5000, "REF-1");
+        spend(everyday(), DUE.minusDays(81), 5000, "REF-2");
+
+        assertThat(candidateIds(rent)).containsExactly(early);
+    }
+
+    @Test
+    void atMostOneHundredCandidatesAreOffered() {
+        Reservation rent = rentSeen(0);
+        Account everyday = everyday();
+        for (int i = 0; i < 101; i++) {
+            spend(everyday, DUE.minusDays(i % 30), 5000 + i, "REF-" + i);
+        }
+
+        assertThat(reservations.paymentCandidates(rent.id())).hasSize(100);
+    }
+
+    @Test
+    void aCandidateIsLikelyWithinTenPercentAndFourteenDaysOfTheDueDate() {
+        Reservation rent = rentSeen(20);
+        Account everyday = everyday();
+        long exact = spend(everyday, DUE.plusDays(14), 11000, "REF-1"); // 10 % more, 14 days after: still likely
+        long cheaper = spend(everyday, DUE.minusDays(14), 9000, "REF-2"); // 10 % less, 14 days before
+        long tooMuch = spend(everyday, DUE, 11001, "REF-3"); // one cent over
+        long tooLess = spend(everyday, DUE, 8999, "REF-4");
+        long tooLate = spend(everyday, DUE.plusDays(15), 10000, "REF-5");
+        long tooEarly = spend(everyday, DUE.minusDays(15), 10000, "REF-6");
+
+        List<PaymentCandidate> candidates = reservations.paymentCandidates(rent.id());
+
+        assertThat(candidates).filteredOn(PaymentCandidate::likely).extracting(c -> c.transaction().id())
+                .containsExactlyInAnyOrder(exact, cheaper);
+        assertThat(candidates).filteredOn(c -> !c.likely()).extracting(c -> c.transaction().id())
+                .containsExactlyInAnyOrder(tooMuch, tooLess, tooLate, tooEarly);
+    }
+
+    @Test
+    void likelyCandidatesComeFirstClosestAmountFirstThenClosestDateThenOldestId() {
+        Reservation rent = rentSeen(20);
+        Account everyday = everyday();
+        long unlikelyNewest = spend(everyday, DUE.plusDays(20), 10000, "REF-1");
+        long off = spend(everyday, DUE, 10500, "REF-2");
+        long exactLater = spend(everyday, DUE.plusDays(3), 10000, "REF-3");
+        long exactOnTheDay = spend(everyday, DUE, 10000, "REF-4");
+        long exactOnTheDayToo = spend(everyday, DUE, 10000, "REF-5");
+
+        assertThat(candidateIds(rent)).containsExactly(exactOnTheDay, exactOnTheDayToo, exactLater, off, unlikelyNewest);
+        assertThat(reservations.paymentCandidates(rent.id())).extracting(PaymentCandidate::likely)
+                .containsExactly(true, true, true, true, false);
+    }
+
+    @Test
+    void thePaymentOfAClosedReservationIsListedWithItsDifference() {
+        Reservation premium = premium();
+        long payment = spend(everyday(), JAN_1, 123456, "REF-1");
+        reservations.close(premium.id(), payment);
+        Reservation plain = reservations.create("Plain", Scope.PRIVATE, eur("10.00"), DEC_31, false, null);
+        reservations.close(plain.id());
+
+        List<ClosedReservation> closed = reservations.closedWithPayments(Scope.PRIVATE);
+
+        ClosedReservation linked = closed.stream().filter(c -> c.reservation().id() == premium.id()).findFirst().orElseThrow();
+        assertThat(linked.payment().id()).isEqualTo(payment);
+        assertThat(linked.paid()).isEqualTo(eur("1234.56"));
+        assertThat(linked.difference()).isEqualTo(eur("34.56"));
+        ClosedReservation unlinked = closed.stream().filter(c -> c.reservation().id() == plain.id()).findFirst().orElseThrow();
+        assertThat(unlinked.payment()).isNull();
+        assertThat(unlinked.paid()).isNull();
+        assertThat(unlinked.difference()).isNull();
+    }
+
+    @Test
+    void aPaymentOfLessThanReservedGivesANegativeDifference() {
+        Reservation premium = premium();
+        reservations.close(premium.id(), spend(everyday(), JAN_1, 100000, "REF-1"));
+
+        assertThat(reservations.closedWithPayments(Scope.PRIVATE).getFirst().difference()).isEqualTo(eur("-200.00"));
     }
 
     // ----- the summary

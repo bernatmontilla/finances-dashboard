@@ -84,6 +84,8 @@ mention the test here.
 - Reservations (#20): "reserved so far" is never stored, it is `finances.money.Reserving` from an anchor (day plus amount); only
   `ReservationService` writes `reservation` and works out what a reservation stands at today, so a view never adds amounts. Anything that
   changes a reservation's amount or due date must re-anchor (`docs/decisions/20-reservations.md`).
+- A reservation closed against a payment (#51) links only a **booked** transaction (a bank sync deletes pending rows); a closed one is never
+  removed, reopen it first (`docs/decisions/51-close-against-transaction.md`).
 
 ## The target machine
 
@@ -117,6 +119,8 @@ mention the test here.
   - labels: `gh api repos/{owner}/{repo}/issues/N/labels -f 'labels[]=release:patch'`
     (remove: `gh api -X DELETE repos/{owner}/{repo}/issues/N/labels/<name>`)
   - ready for review: `gh api -X POST repos/{owner}/{repo}/pulls/N/ccr/ready_for_review`
+- The local `origin/main` can be stale in a fresh session: `git fetch origin main` before you branch from it (a reset to the stale ref
+  silently drops files).
 - Shallow clone: `git fetch origin main` before pushing, else the push re-sends everything (HTTP 413).
   Rebasing a PR branch: read its old tip with `git ls-remote` and push with
   `--force-with-lease=<branch>:<old sha>`.

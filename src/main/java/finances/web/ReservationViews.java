@@ -1,5 +1,7 @@
 package finances.web;
 
+import finances.accounts.ClosedReservation;
+import finances.accounts.PaymentCandidate;
 import finances.accounts.Reservation;
 import finances.accounts.ReservationStanding;
 import finances.accounts.ReservationSummary;
@@ -24,8 +26,28 @@ final class ReservationViews {
         }
     }
 
-    /** A closed reservation, kept for history. */
-    record ClosedRow(long id, String name, String amount, String dueDate, String closedOn, boolean yearly) {
+    /**
+     * A closed reservation, kept for history. When it was closed against a payment (issue #51), {@code payment} says what was paid,
+     * when and from which account, and {@code differenceKey} and {@code difference} say how it compares with the reserved amount
+     * (the amount is without a sign; the key says more, less or exactly). Both are null without a payment.
+     */
+    record ClosedRow(long id, String name, String amount, String dueDate, String closedOn, boolean yearly, Payment payment,
+            String differenceKey, String difference) {
+        public boolean hasPayment() {
+            return payment != null;
+        }
+
+        public boolean hasDifferenceAmount() {
+            return difference != null;
+        }
+    }
+
+    /** The payment a reservation was closed against. */
+    record Payment(String paid, String date, String account, String counterparty) {
+    }
+
+    /** A payment the owner may close a reservation against; {@code likely} marks the ones close in amount and date. */
+    record CandidateRow(long id, String date, String account, String counterparty, String description, String amount, boolean likely) {
     }
 
     /**
@@ -52,13 +74,30 @@ final class ReservationViews {
                 standing.perMonth().map(m -> m.format()).orElse(null), r.yearly(), standing.overdue());
     }
 
-    static ClosedRow closedRow(Reservation r, ZoneId zone) {
-        return new ClosedRow(r.id(), r.name(), r.amount().format(), r.dueDate().toString(),
-                r.closedAt().atZone(zone).toLocalDate().toString(), r.yearly());
+    static ClosedRow closedRow(ClosedReservation closed, ZoneId zone) {
+        Reservation r = closed.reservation();
+        String closedOn = r.closedAt().atZone(zone).toLocalDate().toString();
+        if (!closed.hasPayment()) {
+            return new ClosedRow(r.id(), r.name(), r.amount().format(), r.dueDate().toString(), closedOn, r.yearly(), null, null, null);
+        }
+        var payment = closed.payment();
+        String key = closed.difference().isZero() ? "reservation.difference.exact"
+                : closed.difference().isNegative() ? "reservation.difference.less" : "reservation.difference.more";
+        String difference = closed.difference().isZero() ? null : closed.difference().isNegative()
+                ? closed.difference().negate().format() : closed.difference().format();
+        return new ClosedRow(r.id(), r.name(), r.amount().format(), r.dueDate().toString(), closedOn, r.yearly(),
+                new Payment(closed.paid().format(), payment.bookingDate().toString(), payment.accountName(), payment.counterpartyName()),
+                key, difference);
+    }
+
+    static CandidateRow candidateRow(PaymentCandidate candidate) {
+        var t = candidate.transaction();
+        return new CandidateRow(t.id(), t.bookingDate().toString(), t.accountName(), t.counterpartyName(), t.description(),
+                t.amount().negate().format(), candidate.likely());
     }
 
     /** One scope of the reservations page: every open reservation and the closed ones. */
-    static Group group(Scope scope, ReservationSummary summary, List<ReservationStanding> open, List<Reservation> closed, ZoneId zone,
+    static Group group(Scope scope, ReservationSummary summary, List<ReservationStanding> open, List<ClosedReservation> closed, ZoneId zone,
             boolean sourceConfigured) {
         return new Group(scope.code(), AccountViews.scopeKey(scope), summary.hasOpen() ? summary.reserved().format() : null,
                 open.stream().map(ReservationViews::row).toList(), closed.stream().map(r -> closedRow(r, zone)).toList(),

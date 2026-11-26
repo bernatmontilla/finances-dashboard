@@ -43,7 +43,7 @@ class HeadlineServiceTest {
     void open() throws Exception {
         h = new BankHarness(folder.resolve("data"), false);
         source = new FakeAfterTaxSource();
-        reservations = new ReservationService(h.jdbc, h.clock, h.accounts);
+        reservations = new ReservationService(h.jdbc, h.clock, h.accounts, h.transactions);
         afterTax = afterTaxFor(source.url());
         headlines = headlinesFor(afterTax);
     }

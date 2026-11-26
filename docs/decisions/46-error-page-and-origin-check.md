@@ -42,6 +42,8 @@ For a request that changes something (any method but GET, HEAD, OPTIONS, TRACE):
 - Known limit: a request with **neither** header passes. That is command-line use (curl) and very old
   browsers, and it is also what an attacker who is not a browser can send. This is a mitigation for
   forged cross-site browser requests, not authentication and not CSRF tokens.
+- A host name with an underscore (`http://my_box:8080`) is not a valid URI host for `java.net.URI`, so a browser that sends `Origin` but no `Sec-Fetch-Site` gets 403 there. It fails safe, is rare, and current browsers send `Sec-Fetch-Site`.
+- DNS rebinding (a name that resolves to this machine, with a matching `Host` and `Origin`) is not stopped, before or after this change.
 - Not in this issue: a login, CSRF tokens, rate limiting.
 
 Backwards compatible: no property, migration, route or file format changed.

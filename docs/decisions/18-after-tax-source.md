@@ -12,7 +12,7 @@ Built from issue #18 on top of `docs/contracts/after-tax-source.md` (version 1, 
 - `finances.money.Freshness.afterTax(...)` and the limit `finances.freshness.after-tax-hours` (default 48) in `Freshness.Limits`.
 - `finances.web`: `AfterTaxViews`, the section in `settings.html`, `POST /settings/after-tax/test`; `AccountViews.stale` maps the two new
   reasons.
-- Migration `V6__after_tax.sql`: `after_tax_value`, `after_tax_reserved`, `after_tax_fetch`.
+- Migration `V7__after_tax.sql`: `after_tax_value`, `after_tax_reserved`, `after_tax_fetch`.
 
 ## Decisions
 
@@ -60,7 +60,7 @@ Built from issue #18 on top of `docs/contracts/after-tax-source.md` (version 1, 
 - `SyncScheduler.runOnce` is package-private (a test calls it) and no longer fails when the scheduler was not started.
 - *Test* runs the fetch on the fetch thread and waits for it, so *Test* during a running fetch says `busy` instead of queueing.
 - `BankHarness` (test) exposes its transaction manager so a test can build the after-tax service on the same database.
-- The migration is `V6`; pull request #41 (issue #39) also adds a `V6`. Whichever merges second renumbers its file and the database version in
+- The migration is `V7`: `V6` was taken by #41 (issue #39), which merged first.
   `BackupServiceTest` and `SettingsBackupPagesTest`.
 - Known limit: a source that changes to another one keeps the old history (a candidate issue).
 

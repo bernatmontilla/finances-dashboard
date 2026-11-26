@@ -40,6 +40,16 @@ final class BankMapping {
     record ChosenBalance(long cents, String type, LocalDate date, Instant asOf, AsOfBasis basis) {
     }
 
+    /**
+     * A transaction whose amount carries a sign that contradicts its {@code credit_debit_indicator}: refused on its own and counted,
+     * the rest of the batch is stored. It has no message: nothing of the transaction may travel into one.
+     */
+    static final class Contradiction extends RuntimeException {
+        Contradiction() {
+            super(null, null, false, false);
+        }
+    }
+
     /** An answer that is not shaped as documented: the fetch counts as failed and nothing of it is stored. */
     private static BankApiException unexpected() {
         return new BankApiException(BankApiException.Reason.UNEXPECTED, null, 0);
@@ -118,7 +128,8 @@ final class BankMapping {
     /**
      * One transaction as the store takes it, or null for a status the product does not count (scheduled,
      * cancelled, rejected, on hold, other). The amount is unsigned and its direction is
-     * {@code credit_debit_indicator}; spending is negative.
+     * {@code credit_debit_indicator}; spending is negative. A sign on the amount is accepted when it agrees with the
+     * indicator; when it contradicts it, {@link Contradiction} is thrown and the caller refuses that one transaction.
      */
     static DeliveredTransaction transaction(JsonNode node, LocalDate fetchDay) {
         String status = required(node, "status");
@@ -131,7 +142,11 @@ final class BankMapping {
             return null;
         }
         JsonNode amount = node.path("transaction_amount");
-        long cents = cents(required(amount, "amount"));
+        String amountText = required(amount, "amount");
+        // The reference shows unsigned amounts and the direction in credit_debit_indicator. A sign that agrees with the
+        // indicator ("-12.34" with DBIT) says the same thing twice and is accepted; one that contradicts it is refused.
+        char sign = amountText.charAt(0) == '-' || amountText.charAt(0) == '+' ? amountText.charAt(0) : ' ';
+        long cents = cents(sign == ' ' ? amountText : amountText.substring(1));
         String direction = required(node, "credit_debit_indicator");
         boolean debit;
         if ("DBIT".equals(direction)) {
@@ -158,9 +173,15 @@ final class BankMapping {
         } catch (DateTimeParseException e) {
             throw unexpected();
         }
+        String currency = required(amount, "currency");
+        // Last of the checks, so an item with a broken date or currency fails the whole fetch as it always did.
+        if (sign == '-' && !debit || sign == '+' && debit) {
+            throw new Contradiction();
+        }
         String reference = text(node, "entry_reference");
-        return new DeliveredTransaction(booking, value, debit ? -cents : cents, required(amount, "currency"),
-                text(counterparty, "name"), text(counterpartyAccount, "iban"), description(node), mapped, reference, node.toString());
+        return new DeliveredTransaction(booking, value, debit ? -cents : cents, currency,
+                text(counterparty, "name"), text(counterpartyAccount, "iban"), description(node), mapped, reference, node.toString(),
+                undatedPending(node));
     }
 
     /** A pending transaction with no date of any kind: it is dated by the day of the fetch, unless already known. */

@@ -112,12 +112,25 @@ public class TransactionService {
      * bank; {@link #deliver} never deletes.
      */
     public BankDeliveryReport deliverFromBank(long accountId, Collection<DeliveredTransaction> batch, LocalDate coveredFrom) {
+        return deliverFromBank(accountId, batch, coveredFrom, true);
+    }
+
+    /**
+     * Like {@link #deliverFromBank(long, Collection, LocalDate)}; with {@code complete} false the batch is stored but no pending
+     * row is removed or marked: a fetch from which a transaction was refused is not a complete picture of what the bank reports
+     * (the refused one may be the booked version of a pending row).
+     */
+    public BankDeliveryReport deliverFromBank(long accountId, Collection<DeliveredTransaction> batch, LocalDate coveredFrom,
+            boolean complete) {
         Objects.requireNonNull(batch);
         return inTransaction.execute(status -> {
             Tally tally = store(accountId, Source.BANK, batch.stream());
             String now = Instant.now(clock).toString();
             int removed = 0;
             int kept = 0;
+            if (!complete) {
+                return new BankDeliveryReport(tally.report(), 0, 0);
+            }
             List<PendingRow> pending = jdbc.sql("""
                             select t.id, t.no_longer_reported_at, n.transaction_id is not null as has_note
                             from transactions t left join transaction_note n on n.transaction_id = t.id
@@ -160,14 +173,24 @@ public class TransactionService {
         }
         Tally tally = new Tally();
         Map<String, Integer> identical = new HashMap<>();
-        batch.forEachOrdered(delivered -> storeOne(accountId, source, delivered, now, identical, tally));
+        // Two passes, so the order of the batch decides nothing: first every item is matched to a stored row (by reference or
+        // fingerprint) or inserted; only then does a booked item that is left take over a pending row nobody in this batch claimed.
+        List<DeliveredTransaction> deferred = new ArrayList<>();
+        batch.forEachOrdered(delivered -> {
+            if (!storeOne(accountId, source, delivered, now, identical, tally, false)) {
+                deferred.add(delivered);
+            }
+        });
+        deferred.forEach(delivered -> storeOne(accountId, source, delivered, now, identical, tally, true));
         return tally;
     }
 
-    private void storeOne(long accountId, Source source, DeliveredTransaction t, String now, Map<String, Integer> identical, Tally tally) {
+    /** Stores one item; false (nothing done) when it is a booked item with an unknown reference and the take-over pass has not come yet. */
+    private boolean storeOne(long accountId, Source source, DeliveredTransaction t, String now, Map<String, Integer> identical, Tally tally,
+            boolean takeOverPass) {
         if (!Money.EUR.equals(t.currency())) {
             tally.refused++;
-            return;
+            return true;
         }
         Fields fields = new Fields(
                 t.bookingDate().toString(),
@@ -188,6 +211,9 @@ public class TransactionService {
         if (fields.reference() != null) {
             stored = byReference(accountId, fields.reference());
             if (stored == null && t.status() == TransactionStatus.BOOKED) {
+                if (!takeOverPass) {
+                    return false;
+                }
                 stored = pendingToTakeOver(accountId, fields, tally.touched);
                 claimed = stored != null;
             }
@@ -201,16 +227,16 @@ public class TransactionService {
             jdbc.sql("""
                             insert into transactions (account_id, booking_date, value_date, amount_cents, counterparty_name,
                                 counterparty_iban, description, status, source, reference, fingerprint, occurrence, raw,
-                                first_seen_at, last_seen_at)
-                            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                first_seen_at, last_seen_at, dated_by_fetch)
+                            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """)
                     .params(accountId, fields.bookingDate(), fields.valueDate(), fields.amountCents(), fields.counterpartyName(),
                             fields.counterpartyIban(), fields.description(), fields.status(), fields.source(), fields.reference(),
-                            fingerprint, occurrence, fields.raw(), now, now)
+                            fingerprint, occurrence, fields.raw(), now, now, t.datedByFetch() && t.status() == TransactionStatus.PENDING ? 1 : 0)
                     .update(key);
             tally.touched.add(key.getKey().longValue());
             tally.added++;
-            return;
+            return true;
         }
         tally.touched.add(stored.id());
         // Delivered again, so no longer "not reported".
@@ -222,26 +248,28 @@ public class TransactionService {
             // A booked transaction stays as it is, whatever a late or repeated pending delivery says.
             jdbc.sql("update transactions set last_seen_at = ? where id = ?").params(now, stored.id()).update();
             tally.known++;
-            return;
+            return true;
         }
         // A delivery without a reference never erases the reference a row already has.
         Fields wanted = fields.reference() == null ? fields.withReference(stored.fields().reference()) : fields;
         if (wanted.equals(stored.fields())) {
             jdbc.sql("update transactions set last_seen_at = ? where id = ?").params(now, stored.id()).update();
             tally.known++;
-            return;
+            return true;
         }
         jdbc.sql("""
                         update transactions set booking_date = ?, value_date = ?, amount_cents = ?, counterparty_name = ?,
                             counterparty_iban = ?, description = ?, status = ?, source = ?, reference = ?, fingerprint = ?,
-                            raw = ?, last_seen_at = ?, claimed_pending = max(claimed_pending, ?)
+                            raw = ?, last_seen_at = ?, claimed_pending = max(claimed_pending, ?),
+                            dated_by_fetch = case when ? = 1 then dated_by_fetch else 0 end
                         where id = ?
                         """)
                 .params(wanted.bookingDate(), wanted.valueDate(), wanted.amountCents(), wanted.counterpartyName(),
                         wanted.counterpartyIban(), wanted.description(), wanted.status(), wanted.source(), wanted.reference(),
-                        fingerprint, wanted.raw(), now, claimed ? 1 : 0, stored.id())
+                        fingerprint, wanted.raw(), now, claimed ? 1 : 0, t.datedByFetch() && t.status() == TransactionStatus.PENDING ? 1 : 0, stored.id())
                 .update();
         tally.updated++;
+        return true;
     }
 
     private Stored byReference(long accountId, String reference) {
@@ -266,17 +294,20 @@ public class TransactionService {
      * The one rule for a pending transaction that arrives as booked under a new reference: it is the oldest
      * pending transaction of the same account with the same amount, the same counterparty and the same
      * description (normalised), dated on or before the booking date and at most
-     * {@link #PENDING_TAKEOVER_DAYS} days before it. A row this batch already delivered or matched is never
-     * taken over: the bank lists it as a transaction of its own, so an identical second purchase stays a second
-     * row. The row keeps its identity, and with it the owner's note.
+     * {@link #PENDING_TAKEOVER_DAYS} days before it. A pending row whose date is only the day it was fetched (the bank
+     * gave it none: {@code dated_by_fetch}) may also be dated up to that many days <em>after</em> the booking date,
+     * because the real date of the purchase can be before the day it was first seen. A row this batch already delivered
+     * or matched is never taken over: the bank lists it as a transaction of its own, so an identical second purchase
+     * stays a second row. The row keeps its identity, and with it the owner's note.
      */
     private Stored pendingToTakeOver(long accountId, Fields booked, Set<Long> touched) {
         LocalDate date = LocalDate.parse(booked.bookingDate());
         String counterparty = normalise(booked.counterpartyName());
         String description = normalise(booked.description());
         return jdbc.sql(STORED + " where account_id = ? and status = 'pending' and amount_cents = ? and booking_date >= ?"
-                        + " and booking_date <= ? order by booking_date, occurrence, id")
-                .params(accountId, booked.amountCents(), date.minusDays(PENDING_TAKEOVER_DAYS).toString(), date.toString())
+                        + " and (booking_date <= ? or (dated_by_fetch = 1 and booking_date <= ?)) order by booking_date, occurrence, id")
+                .params(accountId, booked.amountCents(), date.minusDays(PENDING_TAKEOVER_DAYS).toString(), date.toString(),
+                        date.plusDays(PENDING_TAKEOVER_DAYS).toString())
                 .query(TransactionService::stored)
                 .list()
                 .stream()

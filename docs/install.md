@@ -166,6 +166,7 @@ you may read it (`chmod 700`), and updates never touch it.
 | `secrets/enable-banking-key.pem` | the application's private key (you put it there) | **no, on purpose** |
 | `secrets/enable-banking-session-<n>` | the session id of bank consent `<n>`, written by the app | **no, on purpose** |
 | `secrets/after-tax-token` | the token of the after-tax source, optional (you put it there) | **no, on purpose** |
+| `secrets/enable-banking-session-<n>.tag` | a random tag next to that file; it must equal the tag stored on the consent, else the file is not used (a leftover of another consent after a restore) | **no, on purpose** |
 
 The secret files are plain files in the data folder, readable by the service user only, never in a
 log and never in a backup file. Each issue that adds one lists it in this table.

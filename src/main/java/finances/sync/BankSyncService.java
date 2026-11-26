@@ -187,7 +187,7 @@ public class BankSyncService {
     /** Whether the consent has ended, found without a fetch (its date, its missing session file) or by asking for the session. */
     private ConsentStatus endedStatus(Consent consent) {
         Instant now = Instant.now(clock);
-        Optional<String> sessionId = sessions.read(consent.id());
+        Optional<String> sessionId = sessions.read(consent);
         if (!consent.validUntil().isAfter(now) || sessionId.isEmpty()) {
             return ConsentStatus.EXPIRED;
         }
@@ -214,12 +214,12 @@ public class BankSyncService {
         ZoneId zone = clock.getZone();
         boolean first = link.lastSuccessAt() == null;
         LocalDate from = first ? null : LocalDate.ofInstant(link.lastSuccessAt(), zone).minusDays(overlapDays);
-        List<DeliveredTransaction> batch;
+        Fetched fetched;
         BankMapping.ChosenBalance balance;
         try {
             JsonNode balances = client.balances(link.uid(), headers.values());
             balance = BankMapping.balance(balances, started, zone);
-            batch = fetchTransactions(link, from, first, headers, LocalDate.ofInstant(started, zone));
+            fetched = fetchTransactions(link, from, first, headers, LocalDate.ofInstant(started, zone));
         } catch (BankApiException e) {
             record(link, started, trigger, headers, code(e));
             return new Outcome(false, e.reason() == BankApiException.Reason.CONSENT_ENDED ? endedBy(e) : null);
@@ -236,10 +236,10 @@ public class BankSyncService {
                     accounts.addBankBalance(link.accountId(), finances.money.Money.eur(balance.cents()), balance.date(),
                             balance.type(), balance.asOf(), balance.basis());
                 }
-                BankDeliveryReport delivered = transactions.deliverFromBank(link.accountId(), batch, from);
+                BankDeliveryReport delivered = transactions.deliverFromBank(link.accountId(), fetched.batch(), from, fetched.refused() == 0);
                 DeliveryReport d = delivered.delivered();
                 store.insertRun(link.accountId(), started, Instant.now(clock), trigger, headers.sent(), true, null,
-                        d.added(), d.updated(), d.known(), d.refused(), delivered.pendingRemoved(), delivered.pendingKept());
+                        d.added(), d.updated(), d.known(), d.refused() + fetched.refused(), delivered.pendingRemoved(), delivered.pendingKept());
                 return delivered;
             });
             return new Outcome(report != null, null);
@@ -252,14 +252,28 @@ public class BankSyncService {
         }
     }
 
-    /** All pages of one fetch, collected in memory before anything is stored. Any unreadable item fails the whole fetch. */
-    private List<DeliveredTransaction> fetchTransactions(BankAccountLink link, LocalDate from, boolean longest, Headers headers, LocalDate fetchDay) {
+    /** What a fetch collected: the transactions to store, and how many the mapping refused (a sign that contradicts its indicator). */
+    private record Fetched(List<DeliveredTransaction> batch, int refused) {
+    }
+
+    /**
+     * All pages of one fetch, collected in memory before anything is stored. Any unreadable item fails the whole fetch,
+     * except a transaction whose sign contradicts its direction: that one is refused and counted, the rest is stored.
+     */
+    private Fetched fetchTransactions(BankAccountLink link, LocalDate from, boolean longest, Headers headers, LocalDate fetchDay) {
         List<DeliveredTransaction> batch = new ArrayList<>();
+        int refused = 0;
         String key = null;
         for (int page = 0; page < MAX_PAGES; page++) {
             JsonNode answer = client.transactions(link.uid(), from == null ? null : from.toString(), longest, key, headers.values());
             for (JsonNode node : answer.path("transactions")) {
-                DeliveredTransaction delivered = BankMapping.transaction(node, fetchDay);
+                DeliveredTransaction delivered;
+                try {
+                    delivered = BankMapping.transaction(node, fetchDay);
+                } catch (BankMapping.Contradiction e) {
+                    refused++;
+                    continue;
+                }
                 if (delivered != null && BankMapping.undatedPending(node)) {
                     delivered = withKnownDay(link.accountId(), delivered);
                 }
@@ -269,7 +283,7 @@ public class BankSyncService {
             }
             String next = answer.path("continuation_key").isString() ? answer.path("continuation_key").asString() : null;
             if (next == null || next.isBlank()) {
-                return batch;
+                return new Fetched(batch, refused);
             }
             if (next.equals(key)) {
                 break; // the same key again: the bank is not moving on
@@ -284,7 +298,7 @@ public class BankSyncService {
     private DeliveredTransaction withKnownDay(long accountId, DeliveredTransaction t) {
         return transactions.pendingBankDate(accountId, t.amountCents(), t.counterpartyName(), t.description())
                 .map(day -> new DeliveredTransaction(day, t.valueDate(), t.amountCents(), t.currency(), t.counterpartyName(),
-                        t.counterpartyIban(), t.description(), t.status(), t.reference(), t.raw()))
+                        t.counterpartyIban(), t.description(), t.status(), t.reference(), t.raw(), t.datedByFetch()))
                 .orElse(t);
     }
 

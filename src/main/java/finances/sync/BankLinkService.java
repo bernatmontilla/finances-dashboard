@@ -210,8 +210,9 @@ public class BankLinkService {
         int[] counts = new int[2]; // offered, unsupported
         try {
             inTransaction.executeWithoutResult(status -> {
-                consentId[0] = store.insertConsent(attempt.bankName(), attempt.country(), attempt.requiredHeaders(), now, validUntil);
-                sessions.write(consentId[0], sessionId);
+                String tag = SessionFiles.newTag();
+                consentId[0] = store.insertConsent(attempt.bankName(), attempt.country(), attempt.requiredHeaders(), now, validUntil, tag);
+                sessions.write(consentId[0], sessionId, tag);
                 for (BankMapping.Offered account : offered) {
                     Optional<BankAccountLink> known = store.linkedWithKey(account.hash(), account.iban());
                     if (known.isPresent() && "EUR".equals(account.currency())) {
@@ -245,7 +246,7 @@ public class BankLinkService {
         if (store.consent(consentId).isEmpty() || store.linkedCount(consentId) > 0) {
             return;
         }
-        sessions.read(consentId).ifPresent(this::closeQuietly);
+        store.consent(consentId).flatMap(sessions::read).ifPresent(this::closeQuietly);
         inTransaction.executeWithoutResult(status -> store.deleteConsent(consentId));
         sessions.delete(consentId);
     }
@@ -304,7 +305,7 @@ public class BankLinkService {
     public void unlink(long consentId) {
         Consent consent = store.consent(consentId).orElseThrow(() -> new LinkException(LinkException.Reason.NOT_FOUND));
         Optional<Boolean> done = sync.whileNotSyncing(UNLINK_WAIT, () -> {
-            sessions.read(consent.id()).ifPresent(this::closeQuietly);
+            sessions.read(consent).ifPresent(this::closeQuietly);
             inTransaction.executeWithoutResult(status -> {
                 for (BankAccountLink link : store.links(consent.id())) {
                     if (link.linked()) {

@@ -8,7 +8,9 @@ import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -32,16 +34,21 @@ public class ReservationService {
 
     private static final String COLUMNS = """
             id, name, scope, amount_cents, currency, due_date, yearly, anchor_date, anchor_cents, follows_id,
-            created_at, changed_at, closed_at""";
+            created_at, changed_at, closed_at, transaction_id""";
+
+    static final int CANDIDATE_DAYS = 90;
+    static final int LIKELY_DAYS = 14;
 
     private final JdbcClient jdbc;
     private final Clock clock;
     private final AccountService accounts;
+    private final TransactionService transactions;
 
-    public ReservationService(JdbcClient jdbc, Clock clock, AccountService accounts) {
+    public ReservationService(JdbcClient jdbc, Clock clock, AccountService accounts, TransactionService transactions) {
         this.jdbc = jdbc;
         this.clock = clock;
         this.accounts = accounts;
+        this.transactions = transactions;
     }
 
     // ----- reading
@@ -91,6 +98,47 @@ public class ReservationService {
             amounts.add(standing.reserved());
         }
         return new ReservationSummary(scope, standings.size(), Money.sum(amounts), standings.stream().limit(limit).toList());
+    }
+
+    /** The payment a closed reservation is linked to, with the difference to what was reserved; empty when it has no link. */
+    public Optional<ReservationPayment> payment(Reservation reservation) {
+        if (reservation.transactionId() == null) {
+            return Optional.empty();
+        }
+        Transaction transaction = transactions.get(reservation.transactionId());
+        Money paid = transaction.amount().negate();
+        return Optional.of(new ReservationPayment(transaction, paid, paid.minus(reservation.amount())));
+    }
+
+    /** The recent booked payments an open reservation may be closed against, likely matches first. */
+    public List<ReservationCandidate> candidates(long id) {
+        Reservation reservation = get(id);
+        requireOpen(reservation, Reason.ALREADY_CLOSED);
+        LocalDate today = accounts.today();
+        return rank(reservation, transactions.bookedSpending(reservation.scope(), today.minusDays(CANDIDATE_DAYS), today,
+                TransactionService.PAGE_SIZE));
+    }
+
+    /**
+     * Orders payments for the picker: likely matches (the paid amount within a tenth of the reserved amount and the booking date
+     * within {@value #LIKELY_DAYS} days of the due date) first, the closest amount then the closest date first; the rest follow
+     * in the order given (newest first). Integer cents only.
+     */
+    static List<ReservationCandidate> rank(Reservation reservation, List<Transaction> payments) {
+        long reserved = reservation.amount().cents();
+        List<ReservationCandidate> likely = new ArrayList<>();
+        List<ReservationCandidate> rest = new ArrayList<>();
+        for (Transaction payment : payments) {
+            Money paid = payment.amount().negate();
+            long amountGap = Math.abs(paid.cents() - reserved);
+            long dayGap = Math.abs(ChronoUnit.DAYS.between(payment.bookingDate(), reservation.dueDate()));
+            boolean close = Math.multiplyExact(10L, amountGap) <= reserved && dayGap <= LIKELY_DAYS;
+            (close ? likely : rest).add(new ReservationCandidate(payment, paid, close));
+        }
+        likely.sort(Comparator.<ReservationCandidate>comparingLong(c -> Math.abs(c.paid().cents() - reserved))
+                .thenComparingLong(c -> Math.abs(ChronoUnit.DAYS.between(c.transaction().bookingDate(), reservation.dueDate()))));
+        likely.addAll(rest);
+        return likely;
     }
 
     // ----- writing
@@ -148,6 +196,9 @@ public class ReservationService {
     public Reservation setReserved(long id, Money reserved) {
         Reservation current = get(id);
         requireOpen(current);
+        if (!accounts.today().isBefore(current.dueDate())) {
+            throw new ReservationException(Reason.ALREADY_DUE);
+        }
         checkReserved(reserved, current.amount());
         jdbc.sql("update reservation set anchor_date = ?, anchor_cents = ?, changed_at = ? where id = ?")
                 .params(accounts.today().toString(), reserved.cents(), now(), id).update();
@@ -160,9 +211,21 @@ public class ReservationService {
      */
     @Transactional
     public Reservation close(long id) {
+        return close(id, null);
+    }
+
+    /**
+     * Closes a reservation against the payment it was for (issue #51): a booked, spending transaction of an account in the
+     * reservation's scope. The link is kept; nothing is adjusted. A null transaction closes it as {@link #close(long)} does.
+     */
+    @Transactional
+    public Reservation close(long id, Long transactionId) {
         Reservation current = get(id);
         requireOpen(current, Reason.ALREADY_CLOSED);
-        jdbc.sql("update reservation set closed_at = ? where id = ?").params(now(), id).update();
+        if (transactionId != null) {
+            checkPayment(current, transactionId);
+        }
+        jdbc.sql("update reservation set closed_at = ?, transaction_id = ? where id = ?").params(now(), transactionId, id).update();
         if (current.yearly()) {
             insert(current.name(), current.scope(), current.amount(), current.dueDate().plusYears(1), true, accounts.today(),
                     Money.zero(), id);
@@ -190,18 +253,37 @@ public class ReservationService {
         for (Reservation next : rounds) {
             jdbc.sql("delete from reservation where id = ?").param(next.id()).update();
         }
-        jdbc.sql("update reservation set closed_at = null where id = ?").param(id).update();
+        jdbc.sql("update reservation set closed_at = null, transaction_id = null where id = ?").param(id).update();
         return get(id);
     }
 
-    /** The owner removes a reservation. A round that followed it stays, unlinked. */
+    /** The owner removes an open reservation (a closed one is reopened first). A round that followed it stays, unlinked. */
     @Transactional
     public void remove(long id) {
-        get(id);
+        requireOpen(get(id));
         jdbc.sql("delete from reservation where id = ?").param(id).update();
     }
 
     // ----- helpers
+
+    /** The payment must exist, be booked (a bank sync deletes pending rows), be spending, and belong to the reservation's scope. */
+    private void checkPayment(Reservation reservation, long transactionId) {
+        Transaction payment;
+        try {
+            payment = transactions.get(transactionId);
+        } catch (TransactionException e) {
+            throw new ReservationException(Reason.TRANSACTION_NOT_FOUND);
+        }
+        if (payment.pending()) {
+            throw new ReservationException(Reason.TRANSACTION_NOT_BOOKED);
+        }
+        if (accounts.get(payment.accountId()).scope() != reservation.scope()) {
+            throw new ReservationException(Reason.TRANSACTION_OTHER_SCOPE);
+        }
+        if (payment.amount().cents() >= 0) {
+            throw new ReservationException(Reason.TRANSACTION_NOT_SPENDING);
+        }
+    }
 
     private Reservation insert(String name, Scope scope, Money amount, LocalDate dueDate, boolean yearly, LocalDate anchorDate,
             Money anchorAmount, Long followsId) {
@@ -280,7 +362,8 @@ public class ReservationService {
                 Money.of(rs.getLong("amount_cents"), rs.getString("currency")), LocalDate.parse(rs.getString("due_date")),
                 rs.getInt("yearly") == 1, LocalDate.parse(rs.getString("anchor_date")),
                 Money.of(rs.getLong("anchor_cents"), rs.getString("currency")), followsText == null ? null : Long.valueOf(followsText),
-                Instant.parse(rs.getString("created_at")), instant(rs.getString("changed_at")), instant(rs.getString("closed_at")));
+                Instant.parse(rs.getString("created_at")), instant(rs.getString("changed_at")), instant(rs.getString("closed_at")),
+                rs.getObject("transaction_id") == null ? null : rs.getLong("transaction_id"));
     }
 
     private static Instant instant(String text) {

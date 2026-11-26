@@ -18,6 +18,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.sqlite.SQLiteConfig;
 import org.sqlite.SQLiteDataSource;
 
@@ -30,6 +31,10 @@ class ReservationServiceTest {
     private TestClock clock;
     private ReservationService reservations;
     private JdbcClient jdbc;
+    private AccountService accounts;
+    private TransactionService transactions;
+    private Account everyday;
+    private Account business;
 
     @BeforeEach
     void open(@TempDir Path folder) {
@@ -40,7 +45,11 @@ class ReservationServiceTest {
         Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
         jdbc = JdbcClient.create(dataSource);
         clock = new TestClock(JAN_1);
-        reservations = new ReservationService(jdbc, clock, new AccountService(jdbc, clock));
+        accounts = new AccountService(jdbc, clock);
+        transactions = new TransactionService(jdbc, clock, new DataSourceTransactionManager(dataSource));
+        reservations = new ReservationService(jdbc, clock, accounts, transactions);
+        everyday = accounts.addManual("Everyday", Scope.PRIVATE, Kind.CURRENT, "NL51XMPL0000000001");
+        business = accounts.addManual("Business", Scope.BUSINESS, Kind.CURRENT, "NL94XMPL0000000003");
     }
 
     private static Money eur(String typed) {
@@ -209,6 +218,7 @@ class ReservationServiceTest {
         clock.set(DEC_31);
         assertThat(reserved(changed)).isEqualTo(eur("1200.00"));
 
+        clock.set(DEC_31.minusDays(1)); // from the due date on setting it is refused (#51, ALREADY_DUE)
         assertRefused(Reason.RESERVED_OUT_OF_RANGE, () -> reservations.setReserved(created.id(), eur("1200.01")));
         assertRefused(Reason.RESERVED_OUT_OF_RANGE, () -> reservations.setReserved(created.id(), eur("-0.01")));
         assertThat(reservations.setReserved(created.id(), Money.zero()).anchorAmount()).isEqualTo(Money.zero());
@@ -303,15 +313,18 @@ class ReservationServiceTest {
     }
 
     @Test
-    void removingAReservationThatANextRoundFollowsLeavesTheRoundUnlinked() {
+    void aClosedReservationCannotBeRemovedItIsReopenedFirst() {
         Reservation created = reservations.create("Example Insurance premium", Scope.PRIVATE, eur("1200.00"), DEC_31, true, null);
         reservations.close(created.id());
         Reservation next = reservations.open(Scope.PRIVATE).getFirst();
 
-        reservations.remove(created.id());
+        assertRefused(Reason.CLOSED, () -> reservations.remove(created.id()));
 
+        assertThat(reservations.get(created.id()).isOpen()).isFalse();
+        assertThat(reservations.get(next.id()).followsId()).isEqualTo(created.id());
+        reservations.reopen(created.id());
+        reservations.remove(created.id());
         assertThat(reservations.find(created.id())).isEmpty();
-        assertThat(reservations.get(next.id()).followsId()).isNull();
         assertRefused(Reason.NOT_FOUND, () -> reservations.remove(created.id()));
     }
 
@@ -319,6 +332,210 @@ class ReservationServiceTest {
     void aMissingReservationIsNotFound() {
         assertRefused(Reason.NOT_FOUND, () -> reservations.get(42));
         assertRefused(Reason.NOT_FOUND, () -> reservations.close(42));
+    }
+
+    // ----- closing against a transaction (issue #51)
+
+    private long deliver(Account account, LocalDate date, long cents, TransactionStatus status, String reference) {
+        transactions.deliver(account.id(), Source.CSV, List.of(new DeliveredTransaction(date, null, cents, "EUR", "Corner Grocery",
+                "NL10SHOP0000000101", "Premium " + reference, status, status == TransactionStatus.BOOKED ? reference : null,
+                "raw:" + reference)));
+        return jdbc.sql("select id from transactions where raw = ?").param("raw:" + reference).query(Long.class).single();
+    }
+
+    private long booked(LocalDate date, long cents, String reference) {
+        return deliver(everyday, date, cents, TransactionStatus.BOOKED, reference);
+    }
+
+    private Long link(Reservation reservation) {
+        return reservations.get(reservation.id()).transactionId();
+    }
+
+    @Test
+    void closingAgainstABookedTransactionKeepsTheLinkAndReducesNothing() {
+        Reservation created = premium();
+        long paid = booked(LocalDate.of(2026, 12, 29), -123456, "A");
+
+        Reservation closed = reservations.close(created.id(), paid);
+
+        assertThat(closed.isOpen()).isFalse();
+        assertThat(closed.transactionId()).isEqualTo(paid);
+        assertThat(reservations.summary(Scope.PRIVATE, 3).reserved()).isEqualTo(Money.zero());
+        ReservationPayment payment = reservations.payment(closed).orElseThrow();
+        assertThat(payment.paid()).isEqualTo(eur("1234.56"));
+        assertThat(payment.difference()).isEqualTo(eur("34.56"));
+        assertThat(payment.transaction().id()).isEqualTo(paid);
+    }
+
+    @Test
+    void theDifferenceIsAgainstTheReservedAmountWhateverIsPaid() {
+        Reservation exact = premium();
+        Reservation less = reservations.create("Example Gym", Scope.PRIVATE, eur("1200.00"), DEC_31, false, null);
+        long exactId = booked(LocalDate.of(2026, 12, 30), -120000, "B");
+        long lessId = booked(LocalDate.of(2026, 12, 30), -10000, "C");
+
+        assertThat(reservations.payment(reservations.close(exact.id(), exactId)).orElseThrow().difference()).isEqualTo(Money.zero());
+        assertThat(reservations.payment(reservations.close(less.id(), lessId)).orElseThrow().difference()).isEqualTo(eur("-1100.00"));
+    }
+
+    @Test
+    void aPlainCloseStoresNoLinkAndHasNoPayment() {
+        Reservation closed = reservations.close(premium().id());
+        assertThat(closed.transactionId()).isNull();
+        assertThat(reservations.payment(closed)).isEmpty();
+    }
+
+    @Test
+    void closingAgainstATransactionThatDoesNotQualifyIsRefusedAndChangesNothing() {
+        Reservation created = premium();
+        long pending = deliver(everyday, LocalDate.of(2026, 12, 29), -120000, TransactionStatus.PENDING, "P");
+        long otherScope = deliver(business, LocalDate.of(2026, 12, 29), -120000, TransactionStatus.BOOKED, "O");
+        long incoming = booked(LocalDate.of(2026, 12, 29), 120000, "I");
+
+        assertRefused(Reason.TRANSACTION_NOT_FOUND, () -> reservations.close(created.id(), 9999L));
+        assertRefused(Reason.TRANSACTION_NOT_BOOKED, () -> reservations.close(created.id(), pending));
+        assertRefused(Reason.TRANSACTION_OTHER_SCOPE, () -> reservations.close(created.id(), otherScope));
+        assertRefused(Reason.TRANSACTION_NOT_SPENDING, () -> reservations.close(created.id(), incoming));
+        assertThat(reservations.get(created.id()).isOpen()).isTrue();
+        assertThat(link(created)).isNull();
+    }
+
+    @Test
+    void closingAClosedReservationAgainstATransactionIsRefused() {
+        Reservation created = premium();
+        long paid = booked(LocalDate.of(2026, 12, 29), -120000, "A");
+        reservations.close(created.id());
+        assertRefused(Reason.ALREADY_CLOSED, () -> reservations.close(created.id(), paid));
+        assertThat(link(created)).isNull();
+    }
+
+    @Test
+    void closingAYearlyReservationAgainstATransactionStartsNextYearsRound() {
+        Reservation created = reservations.create("Example Insurance premium", Scope.PRIVATE, eur("1200.00"), DEC_31, true, null);
+        long paid = booked(LocalDate.of(2026, 12, 29), -120000, "A");
+
+        reservations.close(created.id(), paid);
+
+        Reservation next = reservations.open(Scope.PRIVATE).getFirst();
+        assertThat(next.followsId()).isEqualTo(created.id());
+        assertThat(next.dueDate()).isEqualTo(DEC_31.plusYears(1));
+        assertThat(next.transactionId()).isNull();
+    }
+
+    @Test
+    void reopeningClearsTheLinkButARefusedReopeningKeepsIt() {
+        Reservation created = reservations.create("Example Insurance premium", Scope.PRIVATE, eur("1200.00"), DEC_31, true, null);
+        long paid = booked(LocalDate.of(2026, 12, 29), -120000, "A");
+        reservations.close(created.id(), paid);
+        Reservation next = reservations.open(Scope.PRIVATE).getFirst();
+        reservations.update(next.id(), "Edited", Scope.PRIVATE, eur("1300.00"), DEC_31.plusYears(1), true);
+
+        assertRefused(Reason.NEXT_ROUND_CHANGED, () -> reservations.reopen(created.id()));
+        assertThat(link(created)).isEqualTo(paid);
+        assertThat(reservations.get(created.id()).isOpen()).isFalse();
+
+        reservations.remove(next.id());
+        Reservation reopened = reservations.reopen(created.id());
+        assertThat(reopened.isOpen()).isTrue();
+        assertThat(reopened.transactionId()).isNull();
+    }
+
+    @Test
+    void aBankDeliveryThatRemovesPendingRowsStillWorksWhileABookedRowIsLinked() {
+        Reservation created = premium();
+        long paid = booked(LocalDate.of(2026, 12, 29), -120000, "A");
+        reservations.close(created.id(), paid);
+        transactions.deliver(everyday.id(), Source.BANK, List.of(new DeliveredTransaction(LocalDate.of(2026, 12, 30), null, -500, "EUR",
+                "Corner Grocery", "NL10SHOP0000000101", "Pending", TransactionStatus.PENDING, null, "raw:pending")));
+
+        transactions.deliverFromBank(everyday.id(), List.of(), null);
+
+        assertThat(link(created)).isEqualTo(paid);
+        assertThat(transactions.get(paid).amount()).isEqualTo(eur("-1200.00"));
+        assertThat(jdbc.sql("select count(*) from transactions where status = 'pending'").query(Integer.class).single()).isZero();
+    }
+
+    @Test
+    void theCandidatesAreBookedSpendingOfTheScopeInTheLast90DaysAtMost50() {
+        clock.set(LocalDate.of(2026, 12, 20));
+        Reservation created = premium();
+        long inside = booked(LocalDate.of(2026, 12, 19), -5000, "IN");
+        long oldest = booked(LocalDate.of(2026, 9, 21), -5000, "EDGE");
+        booked(LocalDate.of(2026, 9, 20), -5000, "TOO-OLD");
+        booked(LocalDate.of(2026, 12, 19), 5000, "INCOMING");
+        deliver(everyday, LocalDate.of(2026, 12, 19), -5000, TransactionStatus.PENDING, "PEND");
+        deliver(business, LocalDate.of(2026, 12, 19), -5000, TransactionStatus.BOOKED, "BIZ");
+        Account old = accounts.addManual("Old", Scope.PRIVATE, Kind.CURRENT, "NL24XMPL0000000002");
+        long archived = deliver(old, LocalDate.of(2026, 12, 1), -5000, TransactionStatus.BOOKED, "ARCH");
+        accounts.archive(old.id());
+
+        assertThat(reservations.candidates(created.id()).stream().map(c -> c.transaction().id()))
+                .containsExactlyInAnyOrder(inside, oldest, archived);
+    }
+
+    @Test
+    void theCandidatesAreCappedAtFifty() {
+        clock.set(LocalDate.of(2026, 12, 20));
+        Reservation created = premium();
+        for (int i = 0; i < 55; i++) {
+            booked(LocalDate.of(2026, 12, 19), -100 - i, "N" + i);
+        }
+        assertThat(reservations.candidates(created.id())).hasSize(TransactionService.PAGE_SIZE);
+    }
+
+    // ----- the ranking (pure, no database)
+
+    private static ReservationCandidate pick(Reservation reservation, long cents, LocalDate date) {
+        Transaction t = new Transaction(1, 1, "Everyday", date, null, Money.eur(cents), "Corner Grocery", null, "x", TransactionStatus.BOOKED,
+                Source.CSV, null, Instant.EPOCH, Instant.EPOCH, false, null);
+        return ReservationService.rank(reservation, List.of(t)).getFirst();
+    }
+
+    @Test
+    void likelyMeansAmountWithinTenPercentAndDateWithinFourteenDays() {
+        Reservation r = premium(); // 1,200.00 due 31 Dec
+        assertThat(pick(r, -120000, DEC_31.minusDays(3)).likely()).isTrue();
+        assertThat(pick(r, -132000, DEC_31).likely()).isTrue();
+        assertThat(pick(r, -132001, DEC_31).likely()).isFalse();
+        assertThat(pick(r, -108000, DEC_31).likely()).isTrue();
+        assertThat(pick(r, -107999, DEC_31).likely()).isFalse();
+        assertThat(pick(r, -120000, DEC_31.minusDays(14)).likely()).isTrue();
+        assertThat(pick(r, -120000, DEC_31.minusDays(15)).likely()).isFalse();
+        assertThat(pick(r, -120000, DEC_31.plusDays(14)).likely()).isTrue();
+        assertThat(pick(r, -120000, DEC_31.plusDays(15)).likely()).isFalse();
+    }
+
+    @Test
+    void likelyMatchesComeFirstClosestAmountThenClosestDateAndTheRestNewestFirst() {
+        Reservation r = premium();
+        Instant t0 = Instant.EPOCH;
+        List<Transaction> list = List.of(
+                tx(1, -50000, LocalDate.of(2026, 12, 30)),
+                tx(2, -125000, DEC_31.minusDays(2)),
+                tx(3, -120000, DEC_31.minusDays(3)),
+                tx(4, -120000, DEC_31.minusDays(1)),
+                tx(5, -1000, LocalDate.of(2026, 6, 1)));
+        assertThat(ReservationService.rank(r, list).stream().map(c -> c.transaction().id())).containsExactly(4L, 3L, 2L, 1L, 5L);
+    }
+
+    private static Transaction tx(long id, long cents, LocalDate date) {
+        return new Transaction(id, 1, "Everyday", date, null, Money.eur(cents), "Corner Grocery", null, "x", TransactionStatus.BOOKED,
+                Source.CSV, null, Instant.EPOCH, Instant.EPOCH, false, null);
+    }
+
+    // ----- the two rules of the review of #20
+
+    @Test
+    void settingReservedOnADueOrOverdueReservationIsRefusedTheDayBeforeItIsAccepted() {
+        Reservation created = premium();
+        clock.set(DEC_31.minusDays(1));
+        reservations.setReserved(created.id(), eur("10.00"));
+
+        clock.set(DEC_31);
+        assertRefused(Reason.ALREADY_DUE, () -> reservations.setReserved(created.id(), eur("20.00")));
+        clock.set(DEC_31.plusDays(5));
+        assertRefused(Reason.ALREADY_DUE, () -> reservations.setReserved(created.id(), eur("20.00")));
+        assertThat(reservations.get(created.id()).anchorAmount()).isEqualTo(eur("10.00"));
     }
 
     // ----- the summary

@@ -57,7 +57,7 @@ class ReservationsController {
         List<ReservationViews.Group> groups = new ArrayList<>();
         for (Scope scope : Scope.values()) {
             ReservationViews.Group group = ReservationViews.group(scope, reservations.summary(scope, 0), reservations.openStandings(scope),
-                    reservations.closed(scope), accounts.zone(), source);
+                    reservations.closed(scope), reservations::payment, accounts.zone(), source);
             if (!group.isEmpty()) {
                 groups.add(group);
             }
@@ -121,14 +121,26 @@ class ReservationsController {
 
     // ----- close, reopen, remove
 
+    /** The picker: the recent booked payments of the scope, likely matches first (issue #51). */
+    @GetMapping("/reservations/{id}/close")
+    String closeForm(@PathVariable long id, Model model) {
+        return closePage(model, openOne(id));
+    }
+
+    private String closePage(Model model, Reservation reservation) {
+        model.addAttribute("reservation", ReservationViews.row(reservations.standing(reservation)));
+        model.addAttribute("candidates", reservations.candidates(reservation.id()).stream().map(c -> ReservationViews.candidate(c, accounts.zone())).toList());
+        return "reservation-close";
+    }
+
     @PostMapping("/reservations/{id}/close")
-    String close(@PathVariable long id, Model model, HttpServletResponse response) {
-        found(id);
+    String close(@PathVariable long id, @RequestParam(defaultValue = "") String transaction, Model model, HttpServletResponse response) {
+        Reservation reservation = found(id);
         try {
-            reservations.close(id);
+            reservations.close(id, parseTransaction(transaction));
             return "redirect:/reservations";
         } catch (ReservationException e) {
-            return refused(response, model, e, listPage(model));
+            return refused(response, model, e, reservation.isOpen() ? closePage(model, reservation) : listPage(model));
         }
     }
 
@@ -144,10 +156,14 @@ class ReservationsController {
     }
 
     @PostMapping("/reservations/{id}/remove")
-    String remove(@PathVariable long id) {
+    String remove(@PathVariable long id, Model model, HttpServletResponse response) {
         found(id);
-        reservations.remove(id);
-        return "redirect:/reservations";
+        try {
+            reservations.remove(id);
+            return "redirect:/reservations";
+        } catch (ReservationException e) {
+            return refused(response, model, e, listPage(model));
+        }
     }
 
     // ----- pages and helpers
@@ -192,6 +208,18 @@ class ReservationsController {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
         return reservation;
+    }
+
+    /** Blank means "no transaction"; anything that is not a number is a transaction that does not exist. */
+    private static Long parseTransaction(String text) {
+        if (text.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.valueOf(text.strip());
+        } catch (NumberFormatException e) {
+            throw new ReservationException(ReservationException.Reason.TRANSACTION_NOT_FOUND);
+        }
     }
 
     private static LocalDate parseDate(String date) {

@@ -3,6 +3,10 @@ package finances.web;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import finances.accounts.AccountService;
+import finances.accounts.DeliveredTransaction;
+import finances.accounts.Source;
+import finances.accounts.TransactionService;
+import finances.accounts.TransactionStatus;
 import finances.accounts.Kind;
 import finances.accounts.ReservationService;
 import finances.accounts.Scope;
@@ -20,6 +24,7 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -78,6 +83,9 @@ class ReservationsPagesTest {
 
     @Autowired
     ReservationService reservations;
+
+    @Autowired
+    TransactionService transactions;
 
     @Autowired
     Clock clock;
@@ -283,5 +291,81 @@ class ReservationsPagesTest {
         String page = get("/reservations").body();
         assertThat(page).contains("href=\"/reservations\"").contains("name=\"viewport\"");
         assertThat(get("/").body()).contains("href=\"/reservations\">Reservations<");
+    }
+
+    // ----- closing against a transaction (issue #51) and the two rules of the review of #20
+
+    private long payment(long accountId, LocalDate date, long cents, TransactionStatus status, String reference) {
+        transactions.deliver(accountId, Source.CSV, List.of(new DeliveredTransaction(date, null, cents, "EUR", "Corner Grocery",
+                "NL10SHOP0000000101", "Premium", status, status == TransactionStatus.BOOKED ? reference : null, "raw:" + reference)));
+        return jdbc.sql("select id from transactions where raw = ?").param("raw:" + reference).query(Long.class).single();
+    }
+
+    private long privateAccount() {
+        return accounts.addManual("Everyday", Scope.PRIVATE, Kind.CURRENT, "NL51XMPL0000000001").id();
+    }
+
+    @Test
+    void theOwnerClosesAgainstAPaymentSeesTheDifferenceAndReopeningClearsIt() throws Exception {
+        long account = privateAccount();
+        String due = today().plusDays(5).toString();
+        post("/reservations", form("Example Insurance premium", "private", "1200,00", due, null, null));
+        long id = idOf("Example Insurance premium");
+        long paid = payment(account, today().minusDays(1), -123456, TransactionStatus.BOOKED, "A");
+        long pending = payment(account, today(), -120000, TransactionStatus.PENDING, "P");
+
+        String picker = get("/reservations/" + id + "/close").body();
+        assertThat(picker).contains("€1,234.56").contains("Corner Grocery").contains("Likely match").contains("Close without a payment")
+                .contains("value=\"" + paid + "\"").doesNotContain("value=\"" + pending + "\"").contains("name=\"viewport\"");
+        assertThat(get("/reservations").body()).contains("Close against a payment");
+
+        HttpResponse<String> refused = post("/reservations/" + id + "/close", Map.of("transaction", String.valueOf(pending)));
+        assertThat(refused.statusCode()).isEqualTo(400);
+        assertThat(refused.body()).contains("Only a booked payment can be picked").contains("Close a reservation");
+        assertThat(post("/reservations/" + id + "/close", Map.of("transaction", "abc")).body()).contains("This payment does not exist.");
+
+        assertThat(post("/reservations/" + id + "/close", Map.of("transaction", String.valueOf(paid))).statusCode()).isEqualTo(302);
+        String page = get("/reservations").body();
+        assertThat(page).contains("Paid €1,234.56 on " + today().minusDays(1) + ", Corner Grocery").contains("€34.56 more than reserved");
+        assertThat(get("/reservations/" + id + "/close").statusCode()).isEqualTo(404);
+        assertThat(get("/reservations/99999/close").statusCode()).isEqualTo(404);
+
+        assertThat(post("/reservations/" + id + "/reopen", Map.of()).statusCode()).isEqualTo(302);
+        assertThat(get("/reservations").body()).doesNotContain("Paid €");
+    }
+
+    @Test
+    void aPlainCloseStillWorksAndShowsNoPaymentLine() throws Exception {
+        post("/reservations", form("Example Gym", "private", "100,00", today().plusDays(5).toString(), null, null));
+        long id = idOf("Example Gym");
+        assertThat(post("/reservations/" + id + "/close", Map.of("transaction", "")).statusCode()).isEqualTo(302);
+        assertThat(get("/reservations").body()).contains("Closed").doesNotContain("Paid €");
+    }
+
+    @Test
+    void aClosedReservationIsNotRemovedByADirectPost() throws Exception {
+        post("/reservations", form("Example Gym", "private", "100,00", today().plusDays(5).toString(), null, null));
+        long id = idOf("Example Gym");
+        post("/reservations/" + id + "/close", Map.of());
+
+        HttpResponse<String> response = post("/reservations/" + id + "/remove", Map.of());
+
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(response.body()).contains("A closed reservation cannot be changed. Reopen it first.");
+        assertThat(jdbc.sql("select count(*) from reservation where id = ?").param(id).query(Integer.class).single()).isEqualTo(1);
+    }
+
+    @Test
+    void aDueReservationOffersNoSetReservedFormAndRefusesADirectPost() throws Exception {
+        post("/reservations", form("Example Gym", "private", "100,00", today().toString(), null, null));
+        long id = idOf("Example Gym");
+        post("/reservations", form("Holiday", "private", "100,00", today().plusDays(40).toString(), null, null));
+        long later = idOf("Holiday");
+
+        assertThat(get("/reservations/" + id + "/edit").body()).doesNotContain("Set reserved so far").contains("Remove");
+        assertThat(get("/reservations/" + later + "/edit").body()).contains("Set reserved so far");
+        HttpResponse<String> response = post("/reservations/" + id + "/reserved", Map.of("reserved", "10.00"));
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(response.body()).contains("This reservation is due");
     }
 }

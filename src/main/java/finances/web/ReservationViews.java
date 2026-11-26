@@ -1,11 +1,16 @@
 package finances.web;
 
 import finances.accounts.Reservation;
+import finances.accounts.ReservationCandidate;
+import finances.accounts.ReservationPayment;
 import finances.accounts.ReservationStanding;
 import finances.accounts.ReservationSummary;
 import finances.accounts.Scope;
+import finances.accounts.Transaction;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Optional;
+import java.util.function.Function;
 
 /**
  * What the reservations page and the overview show of reservations (issue #20): the figures come from
@@ -25,7 +30,18 @@ final class ReservationViews {
     }
 
     /** A closed reservation, kept for history. */
-    record ClosedRow(long id, String name, String amount, String dueDate, String closedOn, boolean yearly) {
+    record ClosedRow(long id, String name, String amount, String dueDate, String closedOn, boolean yearly, Payment payment) {
+        public boolean hasPayment() {
+            return payment != null;
+        }
+    }
+
+    /** The payment a closed reservation was closed against; {@code comparison} is "more", "less" or "same". */
+    record Payment(String paid, String bookedOn, String who, String difference, String comparison) {
+    }
+
+    /** One line of the picker: a booked payment, marked when it is a likely match. */
+    record Candidate(long id, String bookedOn, String who, String account, String paid, boolean likely) {
     }
 
     /**
@@ -52,16 +68,31 @@ final class ReservationViews {
                 standing.perMonth().map(m -> m.format()).orElse(null), r.yearly(), standing.overdue());
     }
 
-    static ClosedRow closedRow(Reservation r, ZoneId zone) {
+    static ClosedRow closedRow(Reservation r, Optional<ReservationPayment> payment, ZoneId zone) {
         return new ClosedRow(r.id(), r.name(), r.amount().format(), r.dueDate().toString(),
-                r.closedAt().atZone(zone).toLocalDate().toString(), r.yearly());
+                r.closedAt().atZone(zone).toLocalDate().toString(), r.yearly(), payment.map(ReservationViews::payment).orElse(null));
+    }
+
+    static Payment payment(ReservationPayment p) {
+        Transaction t = p.transaction();
+        return new Payment(p.paid().format(), t.bookingDate().toString(), who(t), p.gap().format(), p.isMore() ? "more" : p.isLess() ? "less" : "same");
+    }
+
+    static Candidate candidate(ReservationCandidate c, ZoneId zone) {
+        Transaction t = c.transaction();
+        return new Candidate(t.id(), t.bookingDate().toString(), who(t), t.accountName(), c.paid().format(), c.likely());
+    }
+
+    private static String who(Transaction t) {
+        String name = t.counterpartyName();
+        return name != null && !name.isBlank() ? name : t.description() == null ? "" : t.description();
     }
 
     /** One scope of the reservations page: every open reservation and the closed ones. */
-    static Group group(Scope scope, ReservationSummary summary, List<ReservationStanding> open, List<Reservation> closed, ZoneId zone,
-            boolean sourceConfigured) {
+    static Group group(Scope scope, ReservationSummary summary, List<ReservationStanding> open, List<Reservation> closed, Function<Reservation, Optional<ReservationPayment>> payments,
+            ZoneId zone, boolean sourceConfigured) {
         return new Group(scope.code(), AccountViews.scopeKey(scope), summary.hasOpen() ? summary.reserved().format() : null,
-                open.stream().map(ReservationViews::row).toList(), closed.stream().map(r -> closedRow(r, zone)).toList(),
+                open.stream().map(ReservationViews::row).toList(), closed.stream().map(r -> closedRow(r, payments.apply(r), zone)).toList(),
                 scope == Scope.BUSINESS && !sourceConfigured);
     }
 

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title th:text="#{reservation.close.title}"></title>
+  <link rel="stylesheet" th:href="@{/app.css}">
+</head>
+<body>
+  <main>
+    <nav th:replace="~{fragments :: nav}"></nav>
+    <h1 th:text="#{reservation.close.title}"></h1>
+    <p><strong th:text="${reservation.name}"></strong>
+      <span class="amount" th:text="${reservation.amount}"></span>
+      <span class="muted" th:text="#{reservation.due(${reservation.dueDate})}"></span></p>
+    <p class="muted" th:text="#{reservation.close.intro}"></p>
+    <p th:replace="~{fragments :: error}"></p>
+    <form method="post" th:action="@{/reservations/{id}/close(id=${reservation.id})}">
+      <p th:if="${candidates.empty}" class="muted" th:text="#{reservation.close.none}"></p>
+      <ul class="list reservations">
+        <li th:each="c : ${candidates}">
+          <label class="check">
+            <input type="radio" name="transaction" th:value="${c.id}">
+            <span class="amount" th:text="${c.paid}"></span>
+            <span th:text="${c.who}"></span>
+            <span class="muted" th:text="${c.bookedOn}"></span>
+            <span class="muted" th:text="${c.account}"></span>
+            <strong th:if="${c.likely}" th:text="#{reservation.close.likely}"></strong>
+          </label>
+        </li>
+        <li>
+          <label class="check">
+            <input type="radio" name="transaction" value="" checked>
+            <span th:text="#{reservation.close.without}"></span>
+          </label>
+        </li>
+      </ul>
+      <p class="actions">
+        <button type="submit" th:text="#{reservation.close}"></button>
+        <a th:href="@{/reservations}" th:text="#{reservation.cancel}"></a>
+      </p>
+    </form>
+  </main>
+</body>
+</html>

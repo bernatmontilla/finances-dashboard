@@ -84,6 +84,9 @@ mention the test here.
 - Reservations (#20): "reserved so far" is never stored, it is `finances.money.Reserving` from an anchor (day plus amount); only
   `ReservationService` writes `reservation` and works out what a reservation stands at today, so a view never adds amounts. Anything that
   changes a reservation's amount or due date must re-anchor (`docs/decisions/20-reservations.md`).
+- Closing against a transaction (#51): a reservation links only to a **booked** transaction (`reservation.transaction_id`), because
+  `TransactionService.deliverFromBank` deletes pending bank rows and foreign keys are on. A closed reservation is never removed (reopen
+  it first, which clears the link), and "reserved so far" is not set on a due one (`docs/decisions/51-close-reservation-against-transaction.md`).
 
 ## The target machine
 

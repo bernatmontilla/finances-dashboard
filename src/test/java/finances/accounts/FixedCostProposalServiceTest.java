@@ -305,6 +305,20 @@ class FixedCostProposalServiceTest {
     }
 
     @Test
+    void aFailingDetectionAfterAnUndoDoesNotFailTheUndo() {
+        monthly(8, 12, 3, -2000, "Example Telecom", TELECOM_IBAN);
+        proposals.detect();
+        proposals.reject(proposals.proposals().getFirst().id());
+        long rejection = proposals.rejections().getFirst().id();
+        jdbc.sql("drop table fixed_cost_proposal_charge").update();
+        jdbc.sql("drop table fixed_cost_proposal").update();
+
+        proposals.undoRejection(rejection);
+
+        assertThat(proposals.rejections()).isEmpty();
+    }
+
+    @Test
     void aProposalThatIsNotOpenCannotBeRejectedAndIsNotFound() {
         monthly(8, 12, 3, -2000, "Example Telecom", TELECOM_IBAN);
         proposals.detect();

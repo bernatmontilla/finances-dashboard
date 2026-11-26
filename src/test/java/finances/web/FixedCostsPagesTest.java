@@ -565,7 +565,7 @@ class FixedCostsPagesTest {
 
         String page = get("/fixed-costs").body();
         assertThat(page).contains("Found in your transactions").contains("Example Telecom").contains("€20.00").contains("every month")
-                .contains("3 charges, the latest booked " + today()).contains("Add as fixed cost").contains("Not a fixed cost")
+                .contains("Private · 3 charges,").contains("the latest booked " + today()).contains("Add as fixed cost").contains("Not a fixed cost")
                 .contains("id=\"proposals\"");
         String overview = get("/").body();
         assertThat(overview).contains("Fixed costs: 1 needs a look");

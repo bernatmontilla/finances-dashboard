@@ -20,6 +20,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -42,6 +44,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class FixedCostProposalService {
+
+    private static final Logger LOG = LoggerFactory.getLogger(FixedCostProposalService.class);
 
     /** How far back detection reads: enough for a yearly run of two charges that still runs, and it bounds the work. */
     static final int LOOK_BACK_MONTHS = 25;
@@ -95,12 +99,19 @@ public class FixedCostProposalService {
                         proposal.amount().cents(), Instant.now(clock).toString()).update();
     }
 
-    /** Takes a rejection back and looks for proposals again, so the counterparty shows up at once. */
+    /**
+     * Takes a rejection back and looks for proposals again, so the counterparty shows up at once. The undo is done when the rejection is
+     * deleted: a failure of the detection afterwards (a busy database) is logged by its class only and the next sync tries again.
+     */
     public void undoRejection(long id) {
         if (jdbc.sql("delete from fixed_cost_rejection where id = ?").param(id).update() == 0) {
             throw new FixedCostException(Reason.REJECTION_NOT_FOUND);
         }
-        detect();
+        try {
+            detect();
+        } catch (RuntimeException e) {
+            LOG.warn("Proposing fixed costs failed: {}", e.getClass().getSimpleName());
+        }
     }
 
     // ----- detection

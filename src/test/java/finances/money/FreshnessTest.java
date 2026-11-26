@@ -96,4 +96,42 @@ class FreshnessTest {
         assertThatThrownBy(() -> new Freshness.Limits(0, 14, 45, 100, 100)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new Freshness.Limits(36, 14, -1, 100, 100)).isInstanceOf(IllegalArgumentException.class);
     }
+
+    // ----- the after-tax source (issue #18)
+
+    private static final Duration AFTER_TAX_LIMIT = Duration.ofHours(48);
+
+    @Test
+    void anAfterTaxValueExactlyOnTheLimitIsFreshAndOneSecondMoreIsStale() {
+        assertThat(Freshness.afterTax(NOW, NOW.minus(AFTER_TAX_LIMIT), null, AFTER_TAX_LIMIT)).isEmpty();
+
+        Freshness.Stale stale = Freshness.afterTax(NOW, NOW.minus(AFTER_TAX_LIMIT).minusSeconds(1), null, AFTER_TAX_LIMIT).orElseThrow();
+        assertThat(stale.reason()).isEqualTo(Freshness.Reason.SOURCE_OLD);
+        assertThat(stale.age()).isEqualTo(AFTER_TAX_LIMIT.plusSeconds(1));
+        assertThat(stale.detail()).isNull();
+    }
+
+    @Test
+    void aFailedFetchWinsOverAnOldValueAndNamesItsReason() {
+        Freshness.Stale stale = Freshness.afterTax(NOW, NOW.minus(Duration.ofDays(30)), "timeout", AFTER_TAX_LIMIT).orElseThrow();
+
+        assertThat(stale.reason()).isEqualTo(Freshness.Reason.SOURCE_FAILED);
+        assertThat(stale.detail()).isEqualTo("timeout");
+        assertThat(Freshness.afterTax(NOW, NOW.minusSeconds(60), "status", AFTER_TAX_LIMIT)).as("a recent value is stale all the same")
+                .isPresent();
+    }
+
+    @Test
+    void anAfterTaxValueFromTheToleratedFutureIsFreshAndNoValueYetIsNotStale() {
+        assertThat(Freshness.afterTax(NOW, NOW.plusSeconds(300), null, AFTER_TAX_LIMIT)).isEmpty();
+        assertThat(Freshness.afterTax(NOW, null, null, AFTER_TAX_LIMIT)).isEmpty();
+        assertThat(Freshness.afterTax(NOW, null, "timeout", AFTER_TAX_LIMIT)).as("nothing to mark: the page says no value yet").isEmpty();
+    }
+
+    @Test
+    void theAfterTaxLimitDefaultsToFortyEightHoursAndBelowOneIsRefusedAtStart() {
+        assertThat(Freshness.Limits.defaults().afterTax()).isEqualTo(Duration.ofHours(48));
+        assertThat(new Freshness.Limits(36, 14, 45, 100, 100).afterTax()).isEqualTo(Duration.ofHours(48));
+        assertThatThrownBy(() -> new Freshness.Limits(36, 14, 45, 100, 100, 0)).isInstanceOf(IllegalArgumentException.class);
+    }
 }

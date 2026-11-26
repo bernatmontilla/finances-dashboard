@@ -60,3 +60,18 @@ Unknown extra fields are ignored. Amounts are JSON integers, never strings or de
 ## Trying it without a bookkeeping tool
 
 A static file served by any web server on the same machine is a valid source.
+
+## Clarification of version 1: an `as_of` in the future
+
+*Proposed in issue #18; it clarifies a case version 1 is silent on and changes none of its other rules, so the version stays 1.
+The owner decides on it when the pull request is merged.*
+
+A source and the dashboard may be two machines whose clocks differ a little. An `as_of` up to **5 minutes** after the
+dashboard's own clock (exactly 5 minutes included) is accepted and counts as zero seconds old. An `as_of` more than 5
+minutes ahead is refused like any other invalid answer: the last good value stays and is shown as stale, with the reason
+*dated in the future*. A source that stamps its answers in local time without an offset is refused already
+(`as_of` must carry an offset or `Z`).
+
+Also applied by the dashboard, without changing what a source must send: the answer is read up to 64 KiB (a larger body is
+refused), the exchange as a whole takes at most 10 seconds, a redirect is not followed and counts as a status other than
+200, and a duplicate key in the JSON object refuses the answer.

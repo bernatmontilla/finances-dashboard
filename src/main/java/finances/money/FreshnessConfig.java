@@ -17,7 +17,8 @@ public class FreshnessConfig {
             @Value("${finances.freshness.current-days:" + Freshness.Limits.DEFAULT_CURRENT_DAYS + "}") int currentDays,
             @Value("${finances.freshness.savings-days:" + Freshness.Limits.DEFAULT_SAVINGS_DAYS + "}") int savingsDays,
             @Value("${finances.freshness.investment-days:" + Freshness.Limits.DEFAULT_INVESTMENT_DAYS + "}") int investmentDays,
-            @Value("${finances.freshness.debt-days:" + Freshness.Limits.DEFAULT_DEBT_DAYS + "}") int debtDays) {
-        return new Freshness.Limits(bankSyncHours, currentDays, savingsDays, investmentDays, debtDays);
+            @Value("${finances.freshness.debt-days:" + Freshness.Limits.DEFAULT_DEBT_DAYS + "}") int debtDays,
+            @Value("${finances.freshness.after-tax-hours:" + Freshness.Limits.DEFAULT_AFTER_TAX_HOURS + "}") int afterTaxHours) {
+        return new Freshness.Limits(bankSyncHours, currentDays, savingsDays, investmentDays, debtDays, afterTaxHours);
     }
 }

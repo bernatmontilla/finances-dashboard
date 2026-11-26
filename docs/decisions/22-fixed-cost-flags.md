@@ -46,6 +46,12 @@ writer), nothing is cached and nothing is logged.
 Nothing a sync, an import or `matchPayments()` runs deletes `fixed_cost_paid`, `fixed_cost_unpaid`, `fixed_cost_skipped` or
 `fixed_cost_price_kept`.
 
+## Known limit
+
+Two running fixed costs with the same counterparty (say 20.00 and 50.00 at one insurer): when the owner skips or unticks one of them its
+charge stays unlinked, and the other can then show it as a price change. Nothing changes without the owner's click (**Keep** clears it),
+and the flags are not stored, so linking the charge fixes it. Telling such charges apart by amount belongs to the detection work (#71).
+
 ## Changes to #63 (the review of pull request 70)
 
 1. `matchPayments()` also looks at the **previous** month's occurrence (a charge due on 28 Nov and booked on 2 Dec links to `2026-11`,

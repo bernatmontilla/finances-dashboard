@@ -23,6 +23,7 @@
         <span class="muted" th:text="#{fixedcosts.perYear(${group.perYear})}"></span>
       </p>
       <p th:unless="${group.hasRunning()}" class="muted" th:text="#{fixedcosts.noneRunning}"></p>
+      <th:block th:if="${group.hasBasis()}"><div th:replace="~{fragments :: fixedBasis(${group.basis})}"></div></th:block>
       <ul class="list fixed-costs" th:if="${group.hasRunning()}">
         <th:block th:each="row : ${group.running}"><li th:replace="~{fragments :: fixedCost(${row})}"></li></th:block>
       </ul>

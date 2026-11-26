@@ -7,16 +7,20 @@ import finances.accounts.AccountSummary;
 import finances.accounts.FixedCost;
 import finances.accounts.FixedCostException;
 import finances.accounts.FixedCostService;
+import finances.accounts.FixedCostSummary;
 import finances.accounts.Scope;
 import finances.money.AmountFormatException;
+import finances.money.Freshness;
 import finances.money.Money;
 import finances.money.Rhythm;
+import finances.sync.FreshnessService;
 import jakarta.servlet.http.HttpServletResponse;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -38,10 +42,12 @@ class FixedCostsController {
 
     private final FixedCostService fixedCosts;
     private final AccountService accounts;
+    private final FreshnessService freshness;
 
-    FixedCostsController(FixedCostService fixedCosts, AccountService accounts) {
+    FixedCostsController(FixedCostService fixedCosts, AccountService accounts, FreshnessService freshness) {
         this.fixedCosts = fixedCosts;
         this.accounts = accounts;
+        this.freshness = freshness;
     }
 
     // ----- the list
@@ -53,8 +59,11 @@ class FixedCostsController {
 
     private String listPage(Model model) {
         List<FixedCostViews.Group> groups = new ArrayList<>();
+        Map<Long, Freshness.Stale> stale = freshness.stale(accounts.list(false));
         for (Scope scope : Scope.values()) {
-            FixedCostViews.Group group = FixedCostViews.group(scope, fixedCosts.summary(scope), fixedCosts.months(scope), this::accountName);
+            FixedCostSummary summary = fixedCosts.summary(scope);
+            FixedCostViews.Group group = FixedCostViews.group(scope, summary, fixedCosts.months(scope), this::accountName,
+                    FixedCostViews.basis(summary, accounts.zone(), accounts.today(), stale));
             if (!group.isEmpty()) {
                 groups.add(group);
             }

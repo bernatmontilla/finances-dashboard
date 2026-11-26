@@ -36,6 +36,7 @@
             <span class="pending" th:if="${row.overdue}" th:text="#{fixedcosts.overdue}"></span>
           </li>
         </ul>
+        <th:block th:if="${group.hasBasis()}"><div th:replace="~{fragments :: fixedBasis(${group.basis})}"></div></th:block>
         <p class="muted" th:text="#{overview.fixedCostsNote}"></p>
         <p><a th:href="@{/fixed-costs}" th:text="#{overview.fixedCostsAll}"></a></p>
       </details>

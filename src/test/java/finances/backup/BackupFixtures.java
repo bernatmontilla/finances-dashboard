@@ -56,7 +56,7 @@ final class BackupFixtures {
         accounts = new AccountService(jdbc, CLOCK);
         transactions = new TransactionService(jdbc, CLOCK, new DataSourceTransactionManager(dataSource));
         reservations = new ReservationService(jdbc, CLOCK, accounts, transactions);
-        fixedCosts = new FixedCostService(jdbc, CLOCK, accounts);
+        fixedCosts = new FixedCostService(jdbc, CLOCK, accounts, transactions);
     }
 
     static BackupFixtures open(Path folder) {

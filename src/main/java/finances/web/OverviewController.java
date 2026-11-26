@@ -80,7 +80,7 @@ class OverviewController {
         Map<Long, BankBalanceInfo> banks = accounts.latestBankBalances();
         model.addAttribute("headlines", HeadlineViews.headlines(headlines.headlines(active, stale), accounts.today(), accounts.zone(), banks));
         model.addAttribute("reservationGroups", reservationGroups());
-        model.addAttribute("fixedCostsComing", fixedCostsComing());
+        model.addAttribute("fixedCostsComing", fixedCostsComing(stale));
         model.addAttribute("groups", AccountViews.groups(active, accounts.today(), Map.of(), accounts.zone(), banks, stale));
         model.addAttribute("attention", active.stream().filter(s -> stale.containsKey(s.account().id()))
                 .map(s -> new AttentionRow(s.account().id(), s.account().name())).toList());
@@ -102,11 +102,16 @@ class OverviewController {
         return groups;
     }
 
-    /** Per scope with a fixed cost still to come this month: the total and each one with its expected date (issue #21). */
-    private List<FixedCostViews.Coming> fixedCostsComing() {
+    /**
+     * Per scope with a fixed cost still to come this month: the total and each one with its expected date (issue #21), and how old the
+     * transactions are that it rests on (issue #63).
+     */
+    private List<FixedCostViews.Coming> fixedCostsComing(Map<Long, Freshness.Stale> stale) {
         List<FixedCostViews.Coming> groups = new java.util.ArrayList<>();
         for (Scope scope : Scope.values()) {
-            FixedCostViews.Coming coming = FixedCostViews.coming(scope, fixedCosts.summary(scope), id -> null);
+            var summary = fixedCosts.summary(scope);
+            FixedCostViews.Coming coming = FixedCostViews.coming(scope, summary, id -> null,
+                    FixedCostViews.basis(summary, accounts.zone(), accounts.today(), stale));
             if (coming != null) {
                 groups.add(coming);
             }

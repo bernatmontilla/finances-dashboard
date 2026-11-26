@@ -4,6 +4,7 @@ import finances.accounts.Account;
 import finances.accounts.AccountService;
 import finances.accounts.BankDeliveryReport;
 import finances.accounts.DeliveredTransaction;
+import finances.accounts.FixedCostService;
 import finances.accounts.DeliveryReport;
 import finances.accounts.TransactionService;
 import finances.outbound.BankApiException;
@@ -65,19 +66,21 @@ public class BankSyncService {
     private final SessionFiles sessions;
     private final AccountService accounts;
     private final TransactionService transactions;
+    private final FixedCostService fixedCosts;
     private final Clock clock;
     private final TransactionTemplate inTransaction;
     private final int overlapDays;
     private final ReentrantLock running = new ReentrantLock();
 
     public BankSyncService(EnableBankingClient client, BankStore store, SessionFiles sessions, AccountService accounts,
-            TransactionService transactions, Clock clock, PlatformTransactionManager transactionManager,
+            TransactionService transactions, FixedCostService fixedCosts, Clock clock, PlatformTransactionManager transactionManager,
             @Value("${finances.sync.overlap-days:7}") int overlapDays) {
         this.client = client;
         this.store = store;
         this.sessions = sessions;
         this.accounts = accounts;
         this.transactions = transactions;
+        this.fixedCosts = fixedCosts;
         this.clock = clock;
         this.inTransaction = new TransactionTemplate(transactionManager);
         this.overlapDays = Math.max(1, overlapDays);
@@ -180,8 +183,24 @@ public class BankSyncService {
                 store.setStatus(consent.id(), ended, Instant.now(clock));
             }
         }
+        if (ok > 0) {
+            matchFixedCosts();
+        }
         LOG.info("Bank sync finished: {} accounts synced, {} failed.", ok, failed);
         return new SyncSummary(SyncSummary.State.DONE, ok, failed);
+    }
+
+    /**
+     * Marks the fixed costs the new transactions pay (issue #63). It runs after the accounts are stored, outside their database
+     * transactions, and never fails the sync: a failure is logged by its class only (no name, IBAN or amount, hard rule 11), and the
+     * next run tries again.
+     */
+    private void matchFixedCosts() {
+        try {
+            fixedCosts.matchPayments();
+        } catch (RuntimeException e) {
+            LOG.warn("Matching fixed costs failed: {}", e.getClass().getSimpleName());
+        }
     }
 
     /** Whether the consent has ended, found without a fetch (its date, its missing session file) or by asking for the session. */

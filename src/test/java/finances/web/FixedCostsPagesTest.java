@@ -3,8 +3,13 @@ package finances.web;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import finances.accounts.AccountService;
+import finances.accounts.DeliveredTransaction;
+import finances.accounts.FixedCostService;
 import finances.accounts.Kind;
 import finances.accounts.Scope;
+import finances.accounts.Source;
+import finances.accounts.TransactionService;
+import finances.accounts.TransactionStatus;
 import finances.money.Money;
 import java.io.IOException;
 import java.net.URI;
@@ -17,6 +22,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -77,6 +83,12 @@ class FixedCostsPagesTest {
 
     @Autowired
     Clock clock;
+
+    @Autowired
+    TransactionService transactions;
+
+    @Autowired
+    FixedCostService fixedCosts;
 
     @BeforeEach
     void emptyDatabase() {
@@ -234,6 +246,87 @@ class FixedCostsPagesTest {
 
         assertThat(after).contains("Fixed costs still to come this month");
         assertThat(headlineAmount(after, "Private free to spend")).isEqualTo(privateBefore).isEqualTo("€1,234.56");
+    }
+
+    // ----- matched against transactions (issue #63)
+
+    private void deliverEnergy(long account, LocalDate booked, long cents, String reference) {
+        transactions.deliver(account, Source.CSV, List.of(new DeliveredTransaction(booked, null, cents, "EUR", "Example Energy",
+                "NL10SHOP0000000101", "Fictional payment", TransactionStatus.BOOKED, reference, "raw " + reference)));
+    }
+
+    private void addEnergy() throws Exception {
+        Map<String, String> energy = form("Example Energy", "private", "100.00", "monthly", today().toString());
+        energy.put("iban", "NL10SHOP0000000101");
+        assertThat(post("/fixed-costs", energy).statusCode()).isEqualTo(302);
+    }
+
+    @Test
+    void aMatchingPaymentMarksTheMonthPaidShowsItsDateAndAmountAndTheOwnerCanUntickIt() throws Exception {
+        long account = accounts.addManual("Everyday", Scope.PRIVATE, Kind.CURRENT, null).id();
+        addEnergy();
+        long id = idOf("Example Energy");
+        assertThat(get("/fixed-costs").body()).contains("Still to come this month");
+
+        deliverEnergy(account, today(), -10000, "REF-1");
+        fixedCosts.matchPayments();
+
+        String page = get("/fixed-costs").body();
+        assertThat(page).contains("Paid this month").contains("paid by a transaction booked " + today() + ": €100.00")
+                .contains("Not paid after all");
+        assertThat(get("/").body()).as("paid, so no longer to come").doesNotContain("still to come this month");
+
+        assertThat(post("/fixed-costs/" + id + "/untick", Map.of()).statusCode()).isEqualTo(302);
+        assertThat(get("/fixed-costs").body()).contains("Still to come this month").doesNotContain("paid by a transaction");
+        fixedCosts.matchPayments();
+        assertThat(get("/fixed-costs").body()).as("the owner's untick wins over the match").contains("Still to come this month");
+    }
+
+    @Test
+    void stillToComeShowsTheAgeOfTheLatestDeliveryOnThePageAndOnTheOverview() throws Exception {
+        long account = accounts.addManual("Everyday", Scope.PRIVATE, Kind.CURRENT, null).id();
+        addEnergy();
+
+        assertThat(get("/fixed-costs").body()).contains("Matched against transactions").contains("No transactions delivered yet");
+        assertThat(get("/").body()).contains("No transactions delivered yet");
+
+        deliverEnergy(account, today().minusDays(30), -999, "REF-OLD");
+
+        assertThat(get("/fixed-costs").body()).contains("Transactions delivered " + today()).contains("(today)");
+        assertThat(get("/").body()).contains("Transactions delivered " + today()).contains("(today)");
+    }
+
+    @Test
+    void theAgeIsMarkedStaleWhenAnAccountInvolvedIsStale() throws Exception {
+        long account = accounts.addManual("Everyday", Scope.PRIVATE, Kind.CURRENT, null).id();
+        accounts.addBalance(account, Money.eur(1000), today().minusDays(90));
+        addEnergy();
+
+        String page = get("/fixed-costs").body();
+        assertThat(page).contains("Matched against transactions").contains("Stale").contains("not updated for 90 days");
+        assertThat(get("/").body()).contains("not updated for 90 days");
+    }
+
+    @Test
+    void aScopeWithOnlyFixedCostsKeptByHandShowsNoAge() throws Exception {
+        accounts.addManual("Everyday", Scope.PRIVATE, Kind.CURRENT, null);
+        post("/fixed-costs", form("Example Gym", "private", "10.00", "monthly", today().toString()));
+
+        assertThat(get("/fixed-costs").body()).contains("Still to come this month").doesNotContain("Matched against transactions");
+        assertThat(get("/").body()).doesNotContain("Matched against transactions");
+    }
+
+    @Test
+    void theHeadlineNumbersAreTheSameWithAMatchedFixedCost() throws Exception {
+        long everyday = accounts.addManual("Everyday", Scope.PRIVATE, Kind.CURRENT, null).id();
+        accounts.addBalance(everyday, Money.eur(123456), today());
+        addEnergy();
+        String before = headlineAmount(get("/").body(), "Private free to spend");
+
+        deliverEnergy(everyday, today(), -10000, "REF-1");
+        fixedCosts.matchPayments();
+
+        assertThat(headlineAmount(get("/").body(), "Private free to spend")).isEqualTo(before);
     }
 
     @Test

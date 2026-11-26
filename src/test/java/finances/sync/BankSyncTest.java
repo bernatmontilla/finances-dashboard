@@ -12,12 +12,15 @@ import finances.accounts.Account;
 import finances.accounts.AccountException;
 import finances.accounts.AsOfBasis;
 import finances.accounts.BankBalanceInfo;
+import finances.accounts.FixedCost;
+import finances.accounts.FixedCostMonth;
 import finances.accounts.Kind;
 import finances.accounts.Scope;
 import finances.accounts.Source;
 import finances.accounts.Transaction;
 import finances.accounts.TransactionStatus;
 import finances.money.Money;
+import finances.money.Rhythm;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -97,6 +100,40 @@ class BankSyncTest {
 
     private void nextDay() {
         h.clock.set(h.clock.instant().plusSeconds(24 * 3600));
+    }
+
+    // ----- fixed costs matched after a run (issue #63)
+
+    /** A fixed cost of 100.00 for the Example Energy payment the fake bank reports (booked 21 November), kept by IBAN. */
+    private FixedCost energyFixedCost() {
+        return h.fixedCosts.create("Example Energy", Scope.PRIVATE, Money.eur(10000), Rhythm.MONTHLY, LocalDate.of(2026, 11, 22), null,
+                "NL80SHOP0000000102", null);
+    }
+
+    @Test
+    void aRunThatBroughtAMatchingPaymentMarksTheFixedCostPaidAndAMatchingFailureDoesNotFailTheSync() {
+        FixedCost energy = energyFixedCost();
+        linkBothAsNewAccounts();
+
+        FixedCostMonth month = h.fixedCosts.month(energy.id());
+        assertThat(month.status()).isEqualTo(FixedCostMonth.Status.PAID);
+        assertThat(month.byHand()).isFalse();
+        assertThat(month.payment()).hasValueSatisfying(t -> assertThat(t.reference()).isEqualTo("E-0002"));
+
+        // The next run, with matching failing (the table is gone), still ends as done and logs only the class of the failure.
+        h.jdbc.sql("drop table fixed_cost_match").update();
+        ListAppender<ILoggingEvent> logs = new ListAppender<>();
+        logs.start();
+        Logger logger = (Logger) LoggerFactory.getLogger(BankSyncService.class);
+        logger.addAppender(logs);
+        try {
+            nextDay();
+            assertThat(h.sync.syncAll(SyncTrigger.SCHEDULED, Map.of())).isEqualTo(new SyncSummary(SyncSummary.State.DONE, 2, 0));
+        } finally {
+            logger.detachAppender(logs);
+        }
+        assertThat(logs.list).extracting(ILoggingEvent::getFormattedMessage).anyMatch(m -> m.startsWith("Matching fixed costs failed: "))
+                .noneMatch(m -> m.contains("Example") || m.contains("NL80") || m.contains("100"));
     }
 
     // ----- link

@@ -5,6 +5,7 @@ import finances.accounts.AccountException;
 import finances.accounts.AccountService;
 import finances.accounts.DeliveredTransaction;
 import finances.accounts.DeliveryReport;
+import finances.accounts.FixedCostService;
 import finances.accounts.ImportedBalance;
 import finances.accounts.Kind;
 import finances.accounts.Source;
@@ -16,6 +17,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Predicate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 
@@ -28,17 +31,22 @@ import org.springframework.stereotype.Service;
 @Service
 public class CsvImportService {
 
+    private static final Logger LOG = LoggerFactory.getLogger(CsvImportService.class);
+
     /** How many data rows decide whether a saved mapping fits a file. */
     static final int FIT_ROWS = 60;
 
     private final AccountService accounts;
     private final TransactionService transactions;
+    private final FixedCostService fixedCosts;
     private final JdbcClient jdbc;
     private final Clock clock;
 
-    public CsvImportService(AccountService accounts, TransactionService transactions, JdbcClient jdbc, Clock clock) {
+    public CsvImportService(AccountService accounts, TransactionService transactions, FixedCostService fixedCosts, JdbcClient jdbc,
+            Clock clock) {
         this.accounts = accounts;
         this.transactions = transactions;
+        this.fixedCosts = fixedCosts;
         this.jdbc = jdbc;
         this.clock = clock;
     }
@@ -200,6 +208,9 @@ public class CsvImportService {
         DeliveryReport delivery = new DeliveryReport(0, 0, 0, 0);
         if (!parsed.transactions().isEmpty()) {
             delivery = transactions.deliver(accountId, Source.CSV, parsed.transactions());
+            if (delivery.added() > 0 || delivery.updated() > 0) {
+                matchFixedCosts();
+            }
         }
         if (!parsed.transactions().isEmpty()) {
             saveMapping(accountId, mapping); // a mapping that read nothing is not worth offering again
@@ -219,5 +230,17 @@ public class CsvImportService {
         int refusedTotal = refused.size() + delivery.refused();
         return new ImportReport(parsed.rows(), delivery.added(), delivery.updated(), delivery.known(), refusedTotal,
                 refused.size() > ImportReport.LISTED ? refused.subList(0, ImportReport.LISTED) : refused, balance);
+    }
+
+    /**
+     * Marks the fixed costs the stored rows pay (issue #63). The rows are stored already, so a failure here must not fail the
+     * import: it is logged by its class only (hard rule 11) and the next delivery tries again.
+     */
+    private void matchFixedCosts() {
+        try {
+            fixedCosts.matchPayments();
+        } catch (RuntimeException e) {
+            LOG.warn("Matching fixed costs failed: {}", e.getClass().getSimpleName());
+        }
     }
 }

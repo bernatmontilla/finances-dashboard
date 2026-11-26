@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import finances.accounts.Account;
 import finances.accounts.AccountSummary;
 import finances.accounts.Kind;
+import finances.accounts.ReservationService;
 import finances.accounts.Scope;
 import finances.money.BuildUp;
 import finances.money.Freshness;
@@ -36,11 +37,13 @@ class HeadlineServiceTest {
     FakeAfterTaxSource source;
     AfterTaxService afterTax;
     HeadlineService headlines;
+    ReservationService reservations;
 
     @BeforeEach
     void open() throws Exception {
         h = new BankHarness(folder.resolve("data"), false);
         source = new FakeAfterTaxSource();
+        reservations = new ReservationService(h.jdbc, h.clock, h.accounts);
         afterTax = afterTaxFor(source.url());
         headlines = headlinesFor(afterTax);
     }
@@ -58,7 +61,7 @@ class HeadlineServiceTest {
 
     private HeadlineService headlinesFor(AfterTaxService service) {
         FreshnessService freshness = new FreshnessService(h.accounts, h.status, h.sessions, Freshness.Limits.defaults(), h.clock);
-        return new HeadlineService(h.accounts, freshness, service);
+        return new HeadlineService(h.accounts, freshness, service, reservations);
     }
 
     private Account account(String name, Scope scope, Kind kind, long cents, LocalDate date) {
@@ -260,5 +263,98 @@ class HeadlineServiceTest {
         assertThat(both.business().result().total().format()).isEqualTo("€12,345.00");
         assertThat(HeadlineService.Headlines.class.getRecordComponents()).extracting(c -> c.getName())
                 .containsExactly("privateNumber", "business", "stale");
+    }
+
+    // ----- reservations (issue #20)
+
+    /** The even share, rounded up, worked out here again on its own: {@code ceil(amount * elapsed / span)}. */
+    private static long evenShare(long amount, long elapsedDays, long spanDays) {
+        return Math.ceilDiv(amount * elapsedDays, spanDays);
+    }
+
+    private void moveDays(int days) {
+        h.clock.set(Instant.parse("2026-11-26T12:00:00Z").plus(Duration.ofDays(days)));
+    }
+
+    @Test
+    void reservationsLowerTheNumberOfTheirOwnScopeByExactlyWhatIsReservedSoFarMonthByMonth() {
+        account("Everyday", Scope.PRIVATE, Kind.CURRENT, 123_456);
+        afterTax.test(); // business available 12,345.00
+        LocalDate yearEnd = TODAY.plusDays(365);   // 2027-11-26
+        LocalDate winter = TODAY.plusDays(92);     // 2027-02-26
+        reservations.create("Example Insurance premium", Scope.PRIVATE, Money.eur(120_000), yearEnd, false, null);
+        reservations.create("Example Gym year", Scope.PRIVATE, Money.eur(60_000), winter, true, null);
+        reservations.create("Example Telecom bundle", Scope.BUSINESS, Money.eur(30_000), winter, false, null);
+
+        HeadlineService.Headlines start = headlines.headlines();
+        assertThat(start.privateNumber().result().total().cents()).isEqualTo(123_456);
+        assertThat(start.business().result().total().cents()).isEqualTo(1_234_500);
+
+        for (int day : new int[] {30, 61, 92}) {
+            moveDays(day);
+            long insurance = evenShare(120_000, day, 365);
+            long gym = day == 92 ? 60_000 : evenShare(60_000, day, 92);
+            long telecom = day == 92 ? 30_000 : evenShare(30_000, day, 92);
+
+            HeadlineService.Headlines both = headlines.headlines();
+
+            assertThat(both.privateNumber().result().total().cents()).as("private on day " + day).isEqualTo(123_456 - insurance - gym);
+            assertThat(both.privateNumber().result().reserved().cents()).isEqualTo(insurance + gym);
+            assertThat(both.business().result().total().cents()).as("business on day " + day).isEqualTo(1_234_500 - telecom);
+            assertThat(both.privateNumber().result().reservations()).extracting(BuildUp.Reservation::label)
+                    .containsExactlyInAnyOrder("Example Insurance premium", "Example Gym year");
+            assertThat(both.business().result().reservations()).extracting(BuildUp.Reservation::label)
+                    .containsExactly("Example Telecom bundle");
+        }
+    }
+
+    @Test
+    void aClosedReservationNoLongerCountsAndAnOpenOneAtZeroIsALineOfItsOwn() {
+        account("Everyday", Scope.PRIVATE, Kind.CURRENT, 123_456);
+        var oneOff = reservations.create("Example Insurance premium", Scope.PRIVATE, Money.eur(10_000), TODAY.plusDays(10), false, Money.eur(2_500));
+        var yearly = reservations.create("Example Gym year", Scope.PRIVATE, Money.eur(60_000), TODAY.plusDays(10), true, Money.eur(500));
+        assertThat(headlines.headlines().privateNumber().result().reserved().cents()).isEqualTo(3_000);
+
+        reservations.close(oneOff.id());
+        reservations.close(yearly.id()); // starts next year's round at zero
+
+        BuildUp.Result result = headlines.headlines().privateNumber().result();
+        assertThat(result.reservations()).extracting(BuildUp.Reservation::label, r -> r.amount().cents()).containsExactly(
+                org.assertj.core.groups.Tuple.tuple("Example Gym year", 0L));
+        assertThat(result.total().cents()).isEqualTo(123_456);
+    }
+
+    @Test
+    void reservationsAboveTheBalanceMakeThePrivateNumberNegativeWithNothingCapped() {
+        account("Everyday", Scope.PRIVATE, Kind.CURRENT, 10_000);
+        reservations.create("Example Landlord deposit", Scope.PRIVATE, Money.eur(50_000), TODAY.plusDays(30), false, Money.eur(30_000));
+
+        BuildUp.Result result = headlines.headlines().privateNumber().result();
+
+        assertThat(result.total().cents()).isEqualTo(10_000 - 30_000);
+        assertThat(result.total().isNegative()).isTrue();
+    }
+
+    @Test
+    void anOverdueReservationStaysFullyReserved() {
+        account("Everyday", Scope.PRIVATE, Kind.CURRENT, 123_456);
+        reservations.create("Example Insurance premium", Scope.PRIVATE, Money.eur(10_000), TODAY.plusDays(5), false, null);
+        moveDays(40);
+
+        assertThat(headlines.headlines().privateNumber().result().reserved().cents()).isEqualTo(10_000);
+    }
+
+    @Test
+    void businessReservationsWithoutAnAfterTaxSourceLeaveTheBusinessNumberHidden() {
+        reservations.create("Example Telecom bundle", Scope.BUSINESS, Money.eur(30_000), TODAY.plusDays(30), false, null);
+        afterTax.test();
+        HeadlineService withoutSource = headlinesFor(afterTaxFor(""));
+
+        BuildUp.Result business = withoutSource.headlines().business().result();
+
+        assertThat(business.hidden()).isEqualTo(BuildUp.Hidden.NO_SOURCE);
+        assertThat(business.total()).isNull();
+        assertThat(withoutSource.businessSourceConfigured()).isFalse();
+        assertThat(headlines.businessSourceConfigured()).isTrue();
     }
 }

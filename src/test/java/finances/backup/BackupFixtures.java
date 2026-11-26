@@ -3,6 +3,7 @@ package finances.backup;
 import finances.accounts.AccountService;
 import finances.accounts.DeliveredTransaction;
 import finances.accounts.Kind;
+import finances.accounts.ReservationService;
 import finances.accounts.Scope;
 import finances.accounts.Source;
 import finances.accounts.TransactionService;
@@ -34,6 +35,7 @@ final class BackupFixtures {
     final JdbcClient jdbc;
     final AccountService accounts;
     final TransactionService transactions;
+    final ReservationService reservations;
 
     private BackupFixtures(Path folder, String target) {
         this.folder = folder;
@@ -51,6 +53,7 @@ final class BackupFixtures {
         jdbc = JdbcClient.create(dataSource);
         accounts = new AccountService(jdbc, CLOCK);
         transactions = new TransactionService(jdbc, CLOCK, new DataSourceTransactionManager(dataSource));
+        reservations = new ReservationService(jdbc, CLOCK, accounts);
     }
 
     static BackupFixtures open(Path folder) {
@@ -94,6 +97,12 @@ final class BackupFixtures {
         return Stream.of("account", "balance", "transactions", "transaction_note")
                 .map(table -> table + ": " + jdbc.sql("select * from " + table + " order by 1").query().listOfRows().stream()
                         .map(Object::toString).collect(Collectors.joining(" | ")))
+                .collect(Collectors.joining("\n"));
+    }
+
+    /** Every reservation row, as text, so two databases can be compared exactly. */
+    String reservationRows() {
+        return jdbc.sql("select * from reservation order by id").query().listOfRows().stream().map(Object::toString)
                 .collect(Collectors.joining("\n"));
     }
 

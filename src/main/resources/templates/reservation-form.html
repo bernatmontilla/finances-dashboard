@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title th:text="${reservation == null} ? #{reservation.new.title} : #{reservation.edit.title}"></title>
+  <link rel="stylesheet" th:href="@{/app.css}">
+</head>
+<body>
+  <main>
+    <nav th:replace="~{fragments :: nav}"></nav>
+    <h1 th:text="${reservation == null} ? #{reservation.new.title} : #{reservation.edit.title}"></h1>
+    <p th:replace="~{fragments :: error}"></p>
+    <form method="post" th:action="${reservation == null} ? @{/reservations} : @{/reservations/{id}(id=${reservation.id})}">
+      <p>
+        <label for="name" th:text="#{reservation.field.name}"></label>
+        <input id="name" name="name" type="text" maxlength="100" required th:value="${name}">
+      </p>
+      <p>
+        <label for="scope" th:text="#{reservation.field.scope}"></label>
+        <select id="scope" name="scope">
+          <option th:each="code : ${scopes}" th:value="${code}" th:selected="${code == scope}" th:text="#{'scope.' + ${code}}"></option>
+        </select>
+      </p>
+      <p>
+        <label for="amount" th:text="#{reservation.field.amount}"></label>
+        <input id="amount" name="amount" type="text" inputmode="decimal" autocomplete="off" required th:value="${amount}">
+      </p>
+      <p>
+        <label for="due" th:text="#{reservation.field.due}"></label>
+        <input id="due" name="due" type="date" required th:value="${due}">
+      </p>
+      <p>
+        <label for="yearly" class="check">
+          <input id="yearly" name="yearly" type="checkbox" th:value="${yesValue}" th:checked="${yearly}">
+          <span th:text="#{reservation.field.yearly}"></span>
+        </label>
+      </p>
+      <p th:if="${reservation == null}">
+        <label for="reserved" th:text="#{reservation.field.alreadyReserved}"></label>
+        <input id="reserved" name="reserved" type="text" inputmode="decimal" autocomplete="off" th:value="${reserved}">
+        <span class="muted" th:text="#{reservation.alreadyReservedHint}"></span>
+      </p>
+      <p th:if="${reservation != null}" class="muted" th:text="#{reservation.changeHint}"></p>
+      <p class="actions">
+        <button type="submit" th:text="#{reservation.save}"></button>
+        <a th:href="@{/reservations}" th:text="#{reservation.cancel}"></a>
+      </p>
+    </form>
+    <th:block th:if="${reservation != null}">
+      <h2 th:text="#{reservation.reservedSoFar}"></h2>
+      <p>
+        <strong class="amount" th:text="#{reservation.reservedOf(${standing.reserved}, ${standing.amount})}"></strong>
+        <span class="muted" th:if="${standing.hasPerMonth()}" th:text="#{reservation.perMonth(${standing.perMonth})}"></span>
+        <span class="muted" th:unless="${standing.hasPerMonth()}" th:text="#{reservation.isDue}"></span>
+      </p>
+      <form method="post" th:action="@{/reservations/{id}/reserved(id=${reservation.id})}">
+        <p>
+          <label for="setReserved" th:text="#{reservation.field.setReserved}"></label>
+          <input id="setReserved" name="reserved" type="text" inputmode="decimal" autocomplete="off" required th:value="${reserved}">
+          <span class="muted" th:text="#{reservation.setReservedHint}"></span>
+        </p>
+        <p class="actions"><button type="submit" class="secondary" th:text="#{reservation.setReserved}"></button></p>
+      </form>
+      <form method="post" th:action="@{/reservations/{id}/remove(id=${reservation.id})}">
+        <p><button type="submit" class="danger" th:text="#{reservation.remove}"></button></p>
+      </form>
+    </th:block>
+  </main>
+</body>
+</html>

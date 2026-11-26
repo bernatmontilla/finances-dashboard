@@ -3,6 +3,8 @@ package finances.web;
 import finances.accounts.AccountService;
 import finances.accounts.AccountSummary;
 import finances.accounts.BankBalanceInfo;
+import finances.accounts.ReservationService;
+import finances.accounts.Scope;
 import finances.money.Freshness;
 import finances.sync.BankStatus;
 import finances.sync.FreshnessService;
@@ -25,19 +27,24 @@ import org.springframework.web.server.ResponseStatusException;
 @Controller
 class OverviewController {
 
+    /** How many of the next reservations that come due the overview lists per scope. */
+    private static final int NEXT_DUE = 3;
+
     private final BuildProperties build;
     private final AccountService accounts;
     private final BankStatus bank;
     private final FreshnessService freshness;
     private final HeadlineService headlines;
+    private final ReservationService reservations;
 
     OverviewController(BuildProperties build, AccountService accounts, BankStatus bank, FreshnessService freshness,
-            HeadlineService headlines) {
+            HeadlineService headlines, ReservationService reservations) {
         this.build = build;
         this.accounts = accounts;
         this.bank = bank;
         this.freshness = freshness;
         this.headlines = headlines;
+        this.reservations = reservations;
     }
 
     /** An account whose figure may be out of date, as the line at the top links to it. */
@@ -69,12 +76,26 @@ class OverviewController {
         Map<Long, Freshness.Stale> stale = freshness.stale(active);
         Map<Long, BankBalanceInfo> banks = accounts.latestBankBalances();
         model.addAttribute("headlines", HeadlineViews.headlines(headlines.headlines(active, stale), accounts.today(), accounts.zone(), banks));
+        model.addAttribute("reservationGroups", reservationGroups());
         model.addAttribute("groups", AccountViews.groups(active, accounts.today(), Map.of(), accounts.zone(), banks, stale));
         model.addAttribute("attention", active.stream().filter(s -> stale.containsKey(s.account().id()))
                 .map(s -> new AttentionRow(s.account().id(), s.account().name())).toList());
         model.addAttribute("expiring", freshness.expiringConsents().stream()
                 .map(e -> new ExpiringRow(e.consent().id(), e.consent().bankName(), e.endsOn().toString(), e.daysLeft())).toList());
         return "overview";
+    }
+
+    /** Per scope with an open reservation: the total reserved and the next ones that come due (issue #20). */
+    private List<ReservationViews.Group> reservationGroups() {
+        boolean source = headlines.businessSourceConfigured();
+        List<ReservationViews.Group> groups = new java.util.ArrayList<>();
+        for (Scope scope : Scope.values()) {
+            var summary = reservations.summary(scope, NEXT_DUE);
+            if (summary.hasOpen()) {
+                groups.add(ReservationViews.overview(scope, summary, source));
+            }
+        }
+        return groups;
     }
 
     /** The build-up of one number: every line that goes into it, with its own amount and age. */

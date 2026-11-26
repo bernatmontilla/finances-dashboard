@@ -6,6 +6,8 @@ import finances.accounts.AsOfBasis;
 import finances.accounts.BalanceEntry;
 import finances.accounts.BankBalanceInfo;
 import finances.accounts.Kind;
+import finances.accounts.ReservationService;
+import finances.accounts.ReservationStanding;
 import finances.accounts.Scope;
 import finances.money.BuildUp;
 import finances.money.Freshness;
@@ -33,11 +35,18 @@ public class HeadlineService {
     private final AccountService accounts;
     private final FreshnessService freshness;
     private final AfterTaxService afterTax;
+    private final ReservationService reservations;
 
-    HeadlineService(AccountService accounts, FreshnessService freshness, AfterTaxService afterTax) {
+    HeadlineService(AccountService accounts, FreshnessService freshness, AfterTaxService afterTax, ReservationService reservations) {
         this.accounts = accounts;
         this.freshness = freshness;
         this.afterTax = afterTax;
+        this.reservations = reservations;
+    }
+
+    /** Whether there is a business number at all: reservations of the business scope reduce nothing without an after-tax source. */
+    public boolean businessSourceConfigured() {
+        return afterTax.configured();
     }
 
     /** Private free to spend: the number and the accounts that were counted, in the order of its lines. */
@@ -99,11 +108,15 @@ public class HeadlineService {
     }
 
     /**
-     * The open reservations of a scope. There are none until reservations exist (issue #20), which plugs in here and nowhere
-     * else: {@link BuildUp} already takes them.
+     * The open reservations of a scope (issue #20), each with what is reserved so far today: overdue ones (fully reserved) and
+     * ones still at zero included, the earliest due date first. {@link BuildUp} takes them as they are.
      */
-    private static List<BuildUp.Reservation> openReservations(Scope scope) {
-        return List.of();
+    private List<BuildUp.Reservation> openReservations(Scope scope) {
+        List<BuildUp.Reservation> open = new ArrayList<>();
+        for (ReservationStanding standing : reservations.openStandings(scope)) {
+            open.add(new BuildUp.Reservation(standing.reservation().name(), standing.reserved()));
+        }
+        return open;
     }
 
     /** The moment a balance is correct as of, for finding the oldest part: the bank's own time, else the start of its day. */

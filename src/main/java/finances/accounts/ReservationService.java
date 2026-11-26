@@ -105,7 +105,12 @@ public class ReservationService {
         if (reservation.transactionId() == null) {
             return Optional.empty();
         }
-        Transaction transaction = transactions.get(reservation.transactionId());
+        Transaction transaction;
+        try {
+            transaction = transactions.get(reservation.transactionId());
+        } catch (TransactionException e) {
+            return Optional.empty(); // a missing row must not take the whole page down
+        }
         Money paid = transaction.amount().negate();
         return Optional.of(new ReservationPayment(transaction, paid, paid.minus(reservation.amount())));
     }

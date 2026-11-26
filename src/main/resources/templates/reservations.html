@@ -43,7 +43,7 @@
             <span th:if="${row.yearly}" class="muted" th:text="#{reservation.yearly.mark}"></span>
             <span class="amount" th:text="${row.amount}"></span>
             <span class="muted" th:text="#{reservation.closedOn(${row.closedOn})}"></span>
-            <span th:if="${row.hasPayment()}" class="muted">
+            <span th:if="${row.hasPayment()}" class="payment muted">
               <span th:text="#{reservation.paid(${row.payment.paid}, ${row.payment.bookedOn}, ${row.payment.who})}"></span>
               <span th:text="#{'reservation.paid.' + ${row.payment.comparison}(${row.payment.difference})}"></span>
             </span>

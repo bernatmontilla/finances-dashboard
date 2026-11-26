@@ -22,11 +22,13 @@
         <li th:each="c : ${candidates}">
           <label class="check">
             <input type="radio" name="transaction" th:value="${c.id}">
-            <span class="amount" th:text="${c.paid}"></span>
-            <span th:text="${c.who}"></span>
-            <span class="muted" th:text="${c.bookedOn}"></span>
-            <span class="muted" th:text="${c.account}"></span>
-            <strong th:if="${c.likely}" th:text="#{reservation.close.likely}"></strong>
+            <span class="pick">
+              <span class="amount nowrap" th:text="${c.paid}"></span>
+              <strong class="nowrap" th:if="${c.likely}" th:text="#{reservation.close.likely}"></strong>
+              <span class="line name" th:text="${c.who}"></span>
+              <span class="line muted nowrap" th:text="${c.bookedOn}"></span>
+              <span class="line muted name" th:text="${c.account}"></span>
+            </span>
           </label>
         </li>
         <li>

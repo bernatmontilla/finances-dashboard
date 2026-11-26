@@ -78,7 +78,7 @@ final class ReservationViews {
         return new Payment(p.paid().format(), t.bookingDate().toString(), who(t), p.gap().format(), p.isMore() ? "more" : p.isLess() ? "less" : "same");
     }
 
-    static Candidate candidate(ReservationCandidate c, ZoneId zone) {
+    static Candidate candidate(ReservationCandidate c) {
         Transaction t = c.transaction();
         return new Candidate(t.id(), t.bookingDate().toString(), who(t), t.accountName(), c.paid().format(), c.likely());
     }

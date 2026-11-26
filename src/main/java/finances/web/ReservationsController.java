@@ -129,7 +129,7 @@ class ReservationsController {
 
     private String closePage(Model model, Reservation reservation) {
         model.addAttribute("reservation", ReservationViews.row(reservations.standing(reservation)));
-        model.addAttribute("candidates", reservations.candidates(reservation.id()).stream().map(c -> ReservationViews.candidate(c, accounts.zone())).toList());
+        model.addAttribute("candidates", reservations.candidates(reservation.id()).stream().map(c -> ReservationViews.candidate(c)).toList());
         return "reservation-close";
     }
 
@@ -140,7 +140,8 @@ class ReservationsController {
             reservations.close(id, parseTransaction(transaction));
             return "redirect:/reservations";
         } catch (ReservationException e) {
-            return refused(response, model, e, reservation.isOpen() ? closePage(model, reservation) : listPage(model));
+            boolean stillOpen = reservation.isOpen() && e.reason() != ReservationException.Reason.ALREADY_CLOSED;
+            return refused(response, model, e, stillOpen ? closePage(model, reservation) : listPage(model));
         }
     }
 

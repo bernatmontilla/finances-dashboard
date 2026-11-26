@@ -91,7 +91,12 @@ table.preview { border-collapse: collapse; font-size: 0.875rem; }
 table.preview th, table.preview td { border: 1px solid var(--line); padding: 0.25rem 0.5rem; text-align: left; white-space: nowrap; max-width: 14rem; overflow: hidden; text-overflow: ellipsis; }
 table.preview thead th { font-weight: 600; }
 label.check { display: flex; gap: 0.5rem; align-items: center; }
-label.check input { width: auto; }
+label.check input { width: auto; flex: none; }
+label.check .pick { display: block; min-width: 0; }
+.pick .line { display: block; }
+.pick .name, .list .payment { overflow-wrap: anywhere; }
+.nowrap { white-space: nowrap; }
+.list .payment { display: block; }
 .bank-row > * { margin-right: 0.5rem; }
 .bank-row > form.inline { display: inline-block; margin-top: 0.25rem; }
 .nowrap { white-space: nowrap; }

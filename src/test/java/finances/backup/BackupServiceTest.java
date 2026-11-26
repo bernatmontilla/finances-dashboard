@@ -138,6 +138,27 @@ class BackupServiceTest {
     }
 
     @Test
+    void aVersion8BackupWithAReservationRestoresWithNoLinkAfterV9() throws Exception {
+        Path old = folder("old8");
+        BackupFixtures older = BackupFixtures.openOlder(old, "8");
+        older.jdbc.sql("""
+                insert into reservation (name, scope, amount_cents, due_date, anchor_date, anchor_cents, created_at, closed_at)
+                values ('Example Insurance premium', 'private', 120000, '2026-12-31', '2026-01-01', 0, '2026-01-01T00:00:00Z',
+                        '2026-06-01T00:00:00Z')""").update();
+        Path file = backup(old, temp.resolve("old8.zip"));
+
+        Path fresh = folder("fresh8");
+        BackupService service = service(fresh);
+        RestorePlan plan = service.stage(file);
+        assertThat(plan.manifest().schemaVersion()).isEqualTo("8");
+        service.restore(plan.token(), "RESTORE");
+
+        BackupFixtures restored = BackupFixtures.open(fresh);
+        assertThat(restored.count("reservation")).isEqualTo(1);
+        assertThat(restored.jdbc.sql("select count(*) from reservation where transaction_id is null").query(Integer.class).single()).isEqualTo(1);
+    }
+
+    @Test
     void aBackupWhileSomethingIsWritingIsConsistent() throws Exception {
         Path folder = folder("data");
         BackupFixtures live = BackupFixtures.open(folder).fill();

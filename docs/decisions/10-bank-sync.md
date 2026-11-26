@@ -121,3 +121,5 @@ The review in CI passed pull request 36 and left four findings it was not sure a
    session id (as before). The tag file is written first. A consent made before V6 has no tag and no tag file, and those two agree,
    so an installation keeps working after the update; the one case this leaves open is a consent without a tag (a backup older than
    V6, restored) next to a leftover file without a tag: that pair is still taken as a match.
+
+Review follow-ups (not blocking, done with #39): `TransactionService.store` works in two passes, so the order of a batch decides nothing: first every item is matched to a stored row by reference or fingerprint (or inserted), then a booked item with an unknown reference takes over a pending row that is left. `BankMapping.transaction` runs the sign-contradiction check after the date and currency checks, so an item with a broken date or currency fails the fetch as before.

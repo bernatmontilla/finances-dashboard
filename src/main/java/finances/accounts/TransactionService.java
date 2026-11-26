@@ -173,14 +173,24 @@ public class TransactionService {
         }
         Tally tally = new Tally();
         Map<String, Integer> identical = new HashMap<>();
-        batch.forEachOrdered(delivered -> storeOne(accountId, source, delivered, now, identical, tally));
+        // Two passes, so the order of the batch decides nothing: first every item is matched to a stored row (by reference or
+        // fingerprint) or inserted; only then does a booked item that is left take over a pending row nobody in this batch claimed.
+        List<DeliveredTransaction> deferred = new ArrayList<>();
+        batch.forEachOrdered(delivered -> {
+            if (!storeOne(accountId, source, delivered, now, identical, tally, false)) {
+                deferred.add(delivered);
+            }
+        });
+        deferred.forEach(delivered -> storeOne(accountId, source, delivered, now, identical, tally, true));
         return tally;
     }
 
-    private void storeOne(long accountId, Source source, DeliveredTransaction t, String now, Map<String, Integer> identical, Tally tally) {
+    /** Stores one item; false (nothing done) when it is a booked item with an unknown reference and the take-over pass has not come yet. */
+    private boolean storeOne(long accountId, Source source, DeliveredTransaction t, String now, Map<String, Integer> identical, Tally tally,
+            boolean takeOverPass) {
         if (!Money.EUR.equals(t.currency())) {
             tally.refused++;
-            return;
+            return true;
         }
         Fields fields = new Fields(
                 t.bookingDate().toString(),
@@ -201,6 +211,9 @@ public class TransactionService {
         if (fields.reference() != null) {
             stored = byReference(accountId, fields.reference());
             if (stored == null && t.status() == TransactionStatus.BOOKED) {
+                if (!takeOverPass) {
+                    return false;
+                }
                 stored = pendingToTakeOver(accountId, fields, tally.touched);
                 claimed = stored != null;
             }
@@ -223,7 +236,7 @@ public class TransactionService {
                     .update(key);
             tally.touched.add(key.getKey().longValue());
             tally.added++;
-            return;
+            return true;
         }
         tally.touched.add(stored.id());
         // Delivered again, so no longer "not reported".
@@ -235,14 +248,14 @@ public class TransactionService {
             // A booked transaction stays as it is, whatever a late or repeated pending delivery says.
             jdbc.sql("update transactions set last_seen_at = ? where id = ?").params(now, stored.id()).update();
             tally.known++;
-            return;
+            return true;
         }
         // A delivery without a reference never erases the reference a row already has.
         Fields wanted = fields.reference() == null ? fields.withReference(stored.fields().reference()) : fields;
         if (wanted.equals(stored.fields())) {
             jdbc.sql("update transactions set last_seen_at = ? where id = ?").params(now, stored.id()).update();
             tally.known++;
-            return;
+            return true;
         }
         jdbc.sql("""
                         update transactions set booking_date = ?, value_date = ?, amount_cents = ?, counterparty_name = ?,
@@ -256,6 +269,7 @@ public class TransactionService {
                         fingerprint, wanted.raw(), now, claimed ? 1 : 0, t.datedByFetch() && t.status() == TransactionStatus.PENDING ? 1 : 0, stored.id())
                 .update();
         tally.updated++;
+        return true;
     }
 
     private Stored byReference(long accountId, String reference) {

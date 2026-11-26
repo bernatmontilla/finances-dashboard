@@ -497,6 +497,30 @@ class TransactionServiceTest {
     }
 
     @Test
+    void aBookedPurchaseListedBeforeAPendingOneDoesNotTakeOverThePendingRowOrItsNote() {
+        deliverBank(pendingWithReference(DAY, -800, "Example Gym", "Day pass", "R1"));
+        long pendingId = stored().getFirst().id();
+        transactions.setNote(pendingId, "With Alex Sample");
+
+        // Booked first, then the still pending one: same amount and text.
+        DeliveryReport report = deliverBank(
+                booked(DAY, -800, "Example Gym", "Day pass", "B9"),
+                pendingWithReference(DAY, -800, "Example Gym", "Day pass", "R1"));
+
+        assertThat(report).isEqualTo(new DeliveryReport(1, 0, 1, 0));
+        assertThat(stored()).hasSize(2);
+        assertThat(stored()).filteredOn(t -> t.id() == pendingId).singleElement().satisfies(t -> {
+            assertThat(t.status()).isEqualTo(TransactionStatus.PENDING);
+            assertThat(t.reference()).isEqualTo("R1");
+            assertThat(t.note()).isEqualTo("With Alex Sample");
+        });
+        assertThat(stored()).filteredOn(t -> t.id() != pendingId).singleElement().satisfies(t -> {
+            assertThat(t.reference()).isEqualTo("B9");
+            assertThat(t.note()).isNull();
+        });
+    }
+
+    @Test
     void aPendingRowIsBookedUnderAnotherDateAndKeepsItsIdentityAndNote() {
         deliverBank(pending(DAY, -800, "Example Gym", "Day pass"));
         long id = stored().getFirst().id();

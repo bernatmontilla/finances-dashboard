@@ -106,6 +106,15 @@ class BankMappingTest {
     }
 
     @Test
+    void anItemWithABrokenDateOrCurrencyStillFailsTheFetchEvenWhenItsSignContradicts() {
+        String brokenDate = withAmount("-12.34", "CRDT").replace("2026-11-20", "not-a-date");
+        assertThatThrownBy(() -> transaction(brokenDate))
+                .isInstanceOfSatisfying(BankApiException.class, e -> assertThat(e.reason()).isEqualTo(BankApiException.Reason.UNEXPECTED));
+        String noCurrency = withAmount("-12.34", "CRDT").replace("\"currency\":\"EUR\",", "");
+        assertThatThrownBy(() -> transaction(noCurrency)).isInstanceOf(BankApiException.class);
+    }
+
+    @Test
     void aSignedAmountThatIsNotANumberIsStillUnexpected() {
         assertThatThrownBy(() -> transaction(withAmount("--12.34", "DBIT")))
                 .isInstanceOfSatisfying(BankApiException.class, e -> assertThat(e.reason()).isEqualTo(BankApiException.Reason.UNEXPECTED));

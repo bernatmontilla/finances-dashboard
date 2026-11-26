@@ -156,9 +156,6 @@ final class BankMapping {
         } else {
             throw unexpected();
         }
-        if (sign == '-' && !debit || sign == '+' && debit) {
-            throw new Contradiction();
-        }
         JsonNode counterparty = node.path(debit ? "creditor" : "debtor");
         JsonNode counterpartyAccount = node.path(debit ? "creditor_account" : "debtor_account");
         LocalDate booking;
@@ -176,8 +173,13 @@ final class BankMapping {
         } catch (DateTimeParseException e) {
             throw unexpected();
         }
+        String currency = required(amount, "currency");
+        // Last of the checks, so an item with a broken date or currency fails the whole fetch as it always did.
+        if (sign == '-' && !debit || sign == '+' && debit) {
+            throw new Contradiction();
+        }
         String reference = text(node, "entry_reference");
-        return new DeliveredTransaction(booking, value, debit ? -cents : cents, required(amount, "currency"),
+        return new DeliveredTransaction(booking, value, debit ? -cents : cents, currency,
                 text(counterparty, "name"), text(counterpartyAccount, "iban"), description(node), mapped, reference, node.toString(),
                 undatedPending(node));
     }

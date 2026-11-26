@@ -125,7 +125,7 @@ class AfterTaxServiceTest {
             assertThat(service.lastFailure()).isEqualTo("token_unreadable");
         }
         assertThat(source.requests()).as("nothing was sent").isEmpty();
-        assertThat(service.newest()).isEmpty();
+        assertThat(service.current()).isEmpty();
     }
 
     @Test
@@ -137,7 +137,7 @@ class AfterTaxServiceTest {
 
         assertThat(none.configured()).isFalse();
         assertThat(none.test()).isEqualTo(AfterTaxService.TestResult.NOT_CONFIGURED);
-        assertThat(none.newest()).isEmpty();
+        assertThat(none.current()).isEmpty();
         assertThat(none.standing()).isEmpty();
         assertThat(none.recentFetches(10)).isEmpty();
         assertThat(source.requests()).isEmpty();
@@ -172,7 +172,7 @@ class AfterTaxServiceTest {
     void aValidAnswerIsStoredWithItsGrossReservedLinesAndMomentAndIsFresh() {
         assertThat(service.test()).isEqualTo(AfterTaxService.TestResult.OK);
 
-        AfterTaxValue value = service.newest().orElseThrow();
+        AfterTaxValue value = service.current().orElseThrow();
         assertThat(value.availableCents()).isEqualTo(1_234_500);
         assertThat(value.grossBalanceCents()).isEqualTo(2_000_000L);
         assertThat(value.reserved()).extracting(AfterTaxValue.Reserved::label).containsExactly("VAT", "Income tax");
@@ -205,7 +205,7 @@ class AfterTaxServiceTest {
         awaitIdle();
 
         assertThat(source.requests()).hasSize(1);
-        assertThat(service.newest()).isPresent();
+        assertThat(service.current()).isPresent();
     }
 
     // ----- history
@@ -218,7 +218,7 @@ class AfterTaxServiceTest {
 
         assertThat(service.history()).hasSize(1);
         assertThat(service.recentFetches(10)).hasSize(2).allMatch(AfterTaxFetchRow::ok);
-        assertThat(service.newest().orElseThrow().receivedAt()).as("the first receipt stands").isEqualTo(NOW);
+        assertThat(service.current().orElseThrow().receivedAt()).as("the first receipt stands").isEqualTo(NOW);
     }
 
     @Test
@@ -230,18 +230,73 @@ class AfterTaxServiceTest {
 
         assertThat(service.history()).extracting(AfterTaxValue::asOf)
                 .containsExactly(Instant.parse("2026-11-26T06:00:00Z"), Instant.parse("2026-11-26T11:00:00Z"));
-        assertThat(service.newest().orElseThrow().asOf()).isEqualTo(Instant.parse("2026-11-26T11:00:00Z"));
+        assertThat(service.current().orElseThrow().asOf()).isEqualTo(Instant.parse("2026-11-26T11:00:00Z"));
         assertThat(service.history().getFirst().reserved()).hasSize(2);
     }
 
+    // Issue #19 changes what #18 decided here: an answer whose moment is older than the stored value's is kept in the history
+    // but is no longer the value shown (it used to replace it because it was received last).
     @Test
-    void theNewestReceivedValueIsTheCurrentOneEvenWhenItsMomentIsOlder() {
+    void anAnswerWithAnOlderMomentIsKeptInTheHistoryButDoesNotReplaceTheCurrentValue() {
         service.test();
-        source.answer(validAsOf("2026-11-25T06:00:00Z"));
+        source.answer(validAsOf("2026-11-26T05:00:00Z"));
+        h.clock.set(NOW.plusSeconds(60));
         service.test();
 
-        assertThat(service.newest().orElseThrow().asOf()).isEqualTo(Instant.parse("2026-11-25T06:00:00Z"));
+        assertThat(service.current().orElseThrow().asOf()).isEqualTo(Instant.parse("2026-11-26T06:00:00Z"));
+        assertThat(service.history()).extracting(AfterTaxValue::asOf)
+                .containsExactly(Instant.parse("2026-11-26T06:00:00Z"), Instant.parse("2026-11-26T05:00:00Z"));
+        AfterTaxFetchRow newest = service.recentFetches(1).getFirst();
+        assertThat(newest.ok()).as("it is a valid answer, not a failure").isTrue();
+        assertThat(newest.reason()).isEqualTo("older_than_known");
+        assertThat(service.lastFailure()).isNull();
+        assertThat(service.standing()).as("the current value is still fresh").isEmpty();
+    }
+
+    @Test
+    void aLaterAnswerWithANewerMomentBecomesTheCurrentValue() {
+        service.test();
+        source.answer(validAsOf("2026-11-26T07:00:00Z"));
+        h.clock.set(NOW.plusSeconds(60));
+        service.test();
+
+        assertThat(service.current().orElseThrow().asOf()).isEqualTo(Instant.parse("2026-11-26T07:00:00Z"));
+        assertThat(service.recentFetches(1).getFirst().reason()).isNull();
+    }
+
+    @Test
+    void theCurrentValueIsPickedByTheInstantNotByTheTextOfItsMoment() {
+        // "…:00Z" sorts after "…:00.500Z" as text although it is the earlier moment.
+        source.answer(validAsOf("2026-11-26T06:00:00.500Z"));
+        service.test();
+        source.answer(validAsOf("2026-11-26T06:00:00Z"));
+        service.test();
+
+        assertThat(service.current().orElseThrow().asOf()).isEqualTo(Instant.parse("2026-11-26T06:00:00.500Z"));
         assertThat(service.history()).hasSize(2);
+    }
+
+    @Test
+    void whenTwoValuesShareAMomentTheOneReceivedLastIsCurrent() {
+        service.test();
+        source.answer(FakeAfterTaxSource.valid(Instant.parse("2026-11-26T06:00:00Z")).replace("1234500", "1234501"));
+        h.clock.set(NOW.plusSeconds(60));
+        service.test();
+
+        assertThat(service.current().orElseThrow().availableCents()).isEqualTo(1_234_501);
+    }
+
+    @Test
+    void anOlderAnswerReceivedTwiceIsStoredOnce() {
+        service.test();
+        source.answer(validAsOf("2026-11-26T05:00:00Z"));
+        service.test();
+        service.test();
+        service.test();
+
+        assertThat(service.history()).hasSize(2);
+        assertThat(h.count("select count(*) from after_tax_reserved")).as("two lines for each of the two values").isEqualTo(4);
+        assertThat(service.recentFetches(10)).hasSize(4).allMatch(AfterTaxFetchRow::ok);
     }
 
     @Test
@@ -250,7 +305,7 @@ class AfterTaxServiceTest {
 
         service.test();
 
-        AfterTaxValue value = service.newest().orElseThrow();
+        AfterTaxValue value = service.current().orElseThrow();
         assertThat(value.availableCents()).isEqualTo(1_234_501);
         assertThat(value.mismatch()).isTrue();
     }
@@ -270,10 +325,10 @@ class AfterTaxServiceTest {
     // ----- what is kept when something goes wrong
 
     private void assertKeptAndFailed(String reason, Integer status) {
-        AfterTaxValue before = service.newest().orElseThrow();
+        AfterTaxValue before = service.current().orElseThrow();
         assertThat(service.test()).isEqualTo(AfterTaxService.TestResult.FAILED);
 
-        assertThat(service.newest()).as(reason).contains(before);
+        assertThat(service.current()).as(reason).contains(before);
         assertThat(service.history()).as(reason).hasSize(1);
         assertThat(service.lastFailure()).as(reason).isEqualTo(reason);
         assertThat(service.recentFetches(1).getFirst().httpStatus()).as(reason).isEqualTo(status);
@@ -332,11 +387,11 @@ class AfterTaxServiceTest {
         }
         service = serviceFor(gone, Duration.ofSeconds(5));
         service.recentFetches(1); // the same database: the value stored before is still the last good one
-        AfterTaxValue before = service.newest().orElseThrow();
+        AfterTaxValue before = service.current().orElseThrow();
 
         assertThat(service.test()).isEqualTo(AfterTaxService.TestResult.FAILED);
 
-        assertThat(service.newest()).contains(before);
+        assertThat(service.current()).contains(before);
         assertThat(service.lastFailure()).isEqualTo("unreachable");
     }
 
@@ -346,7 +401,7 @@ class AfterTaxServiceTest {
 
         assertThat(service.test()).isEqualTo(AfterTaxService.TestResult.FAILED);
 
-        assertThat(service.newest()).isEmpty();
+        assertThat(service.current()).isEmpty();
         assertThat(service.standing()).isEmpty();
         assertThat(service.recentFetches(10)).hasSize(1);
     }
@@ -359,6 +414,31 @@ class AfterTaxServiceTest {
 
         assertThat(service.lastFailure()).isEqualTo("store_failed");
         assertThat(h.count("select count(*) from after_tax_value")).isZero();
+    }
+
+    @Test
+    void whenNoFetchRecordCanBeWrittenTheFailureIsKeptInMemoryUntilARecordIsWritten() {
+        service.test();
+        assertThat(service.standing()).isEmpty();
+        h.jdbc.sql("create trigger fetch_busy before insert on after_tax_fetch begin select raise(abort, 'database is locked'); end")
+                .update();
+        h.clock.set(NOW.plusSeconds(60));
+
+        assertThat(service.test()).isEqualTo(AfterTaxService.TestResult.FAILED);
+
+        assertThat(service.lastFailure()).isEqualTo("store_failed");
+        assertThat(service.standing()).hasValueSatisfying(stale -> {
+            assertThat(stale.reason()).isEqualTo(Freshness.Reason.SOURCE_FAILED);
+            assertThat(stale.detail()).isEqualTo("store_failed");
+        });
+        assertThat(service.recentFetches(10)).as("the earlier record still says fetched").hasSize(1);
+
+        h.jdbc.sql("drop trigger fetch_busy").update();
+        h.clock.set(NOW.plusSeconds(120));
+        assertThat(service.test()).isEqualTo(AfterTaxService.TestResult.OK);
+
+        assertThat(service.lastFailure()).isNull();
+        assertThat(service.standing()).isEmpty();
     }
 
     // ----- a slow source

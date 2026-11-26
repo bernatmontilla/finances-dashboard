@@ -39,9 +39,14 @@ final class AfterTaxViews {
         }
     }
 
+    /** {@code reasonKey} says why a fetch failed, or, for one that went well, what was special about it (an answer older than the value shown). */
     record FetchRow(String when, String triggerKey, boolean ok, String reasonKey, Integer status) {
         public boolean hasStatus() {
             return status != null;
+        }
+
+        public boolean hasNote() {
+            return ok && reasonKey != null;
         }
     }
 
@@ -76,7 +81,7 @@ final class AfterTaxViews {
             return new Section(false, false, false, false, null, null, List.of(), noticeKey);
         }
         ZoneId zone = clock.getZone();
-        AfterTaxValue newest = service.newest().orElse(null);
+        AfterTaxValue newest = service.current().orElse(null);
         List<FetchRow> fetches = service.recentFetches(FETCHES_SHOWN).stream().map(row -> fetch(row, zone)).toList();
         return new Section(true, service.https(), service.tokenPresent(), service.tokenOverPlainHttp(),
                 newest == null ? null : value(newest, LocalDate.now(clock), zone),
@@ -102,7 +107,12 @@ final class AfterTaxViews {
 
     private static FetchRow fetch(AfterTaxFetchRow row, ZoneId zone) {
         return new FetchRow(BankViews.moment(row.startedAt(), zone), "aftertax.trigger." + triggerCode(row.trigger()), row.ok(),
-                row.ok() ? null : "aftertax.reason." + reasonCode(row.reason()), row.httpStatus());
+                row.ok() ? okNote(row.reason()) : "aftertax.reason." + reasonCode(row.reason()), row.httpStatus());
+    }
+
+    /** The one note a fetch that went well can carry; any other stored text shows nothing. */
+    private static String okNote(String reason) {
+        return AfterTaxReason.OLDER_THAN_KNOWN.code().equals(reason) ? "aftertax.reason." + AfterTaxReason.OLDER_THAN_KNOWN.code() : null;
     }
 
     private static String triggerCode(String trigger) {

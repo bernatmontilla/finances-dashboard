@@ -33,7 +33,7 @@
       </p>
       <p>
         <label for="yearly" class="check">
-          <input id="yearly" name="yearly" type="checkbox" value="yes" th:checked="${yearly}">
+          <input id="yearly" name="yearly" type="checkbox" th:value="${yesValue}" th:checked="${yearly}">
           <span th:text="#{reservation.field.yearly}"></span>
         </label>
       </p>

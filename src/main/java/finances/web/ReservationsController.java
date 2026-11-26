@@ -163,6 +163,7 @@ class ReservationsController {
         model.addAttribute("yearly", yearly);
         model.addAttribute("reserved", reserved);
         model.addAttribute("scopes", SCOPE_CODES);
+        model.addAttribute("yesValue", "yes");
         model.addAttribute("today", accounts.today().toString());
         return "reservation-form";
     }

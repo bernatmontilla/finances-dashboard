@@ -74,6 +74,7 @@
           </p>
           <p th:if="${afterTax.value.mismatch}" class="notice" th:text="#{aftertax.mismatch}"></p>
           <p th:if="${afterTax.value.hasGross()}" th:text="#{aftertax.gross(${afterTax.value.gross})}"></p>
+          <p th:if="${afterTax.value.hasReserved()}" class="muted" th:text="#{aftertax.reserved}"></p>
           <ul class="list" th:if="${afterTax.value.hasReserved()}">
             <li th:each="line : ${afterTax.value.reserved}" class="bank-row">
               <span th:text="${line.label}"></span>
